@@ -27,3 +27,6 @@ class User(Base):
     medical_history = relationship(
         "MedicalHistory", back_populates="user", uselist=False, cascade="all, delete-orphan"
     )
+    settings = relationship(
+        "UserSettings", back_populates="user", uselist=False, cascade="all, delete-orphan"
+    )

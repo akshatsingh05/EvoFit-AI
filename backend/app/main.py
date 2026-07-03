@@ -6,9 +6,16 @@ from app.database.base import Base
 from app.database.session import engine
 
 # Import models so they're registered on Base.metadata before create_all runs
-from app.models import user, onboarding, medical_history  # noqa: F401
+from app.models import user, onboarding, medical_history, user_settings  # noqa: F401
 
-from app.routers import auth, onboarding as onboarding_router, medical_history as medical_history_router
+from app.routers import (
+    auth,
+    onboarding as onboarding_router,
+    medical_history as medical_history_router,
+    dashboard,
+    profile,
+    settings as settings_router,
+)
 
 Base.metadata.create_all(bind=engine)
 
@@ -25,6 +32,9 @@ app.add_middleware(
 app.include_router(auth.router)
 app.include_router(onboarding_router.router)
 app.include_router(medical_history_router.router)
+app.include_router(dashboard.router)
+app.include_router(profile.router)
+app.include_router(settings_router.router)
 
 
 @app.get("/health")

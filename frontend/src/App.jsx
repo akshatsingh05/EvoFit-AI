@@ -5,6 +5,8 @@ import Signup from './pages/Signup.jsx'
 import ForgotPassword from './pages/ForgotPassword.jsx'
 import OnboardingWizard from './pages/onboarding/OnboardingWizard.jsx'
 import Dashboard from './pages/Dashboard.jsx'
+import Profile from './pages/Profile.jsx'
+import Settings from './pages/Settings.jsx'
 import ProtectedRoute from './routes/ProtectedRoute.jsx'
 
 export default function App() {
@@ -24,6 +26,8 @@ export default function App() {
       {/* Protected: everything else requires completed onboarding */}
       <Route element={<ProtectedRoute />}>
         <Route path="/dashboard" element={<Dashboard />} />
+        <Route path="/profile" element={<Profile />} />
+        <Route path="/settings" element={<Settings />} />
       </Route>
 
       <Route path="*" element={<Landing />} />

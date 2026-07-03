@@ -82,7 +82,8 @@ Visit `http://localhost:5173`.
 |---|---|
 | `VITE_API_BASE_URL` | Base URL of the backend API |
 
-## Next: Module 2
+## Next: Module 3
 
-Dashboard, sidebar, top navigation, profile/settings screens, and the dashboard
-aggregation API — building on this same project, no regeneration.
+AI workout and nutrition generation. This is what will replace the honest
+"not_generated" empty states in Today's Workout / Today's Nutrition, and feed
+real numbers into the AI Coach Tip.
