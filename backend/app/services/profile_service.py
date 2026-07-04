@@ -2,7 +2,7 @@ from sqlalchemy.orm import Session
 
 from app.models.user import User
 from app.schemas.profile import ProfileResponse, ProfileUpdateRequest
-from app.services import onboarding_service, medical_history_service
+from app.services import onboarding_service, medical_history_service, notification_service
 
 
 def get_profile(db: Session, user: User) -> ProfileResponse:
@@ -30,4 +30,5 @@ def update_profile(db: Session, user: User, payload: ProfileUpdateRequest) -> Pr
     user.full_name = payload.full_name.strip()
     db.commit()
     db.refresh(user)
+    notification_service.create_notification(db, user, "profile_updated", "Your profile information was updated.")
     return get_profile(db, user)

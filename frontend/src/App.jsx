@@ -7,6 +7,9 @@ import OnboardingWizard from './pages/onboarding/OnboardingWizard.jsx'
 import Dashboard from './pages/Dashboard.jsx'
 import Profile from './pages/Profile.jsx'
 import Settings from './pages/Settings.jsx'
+import Workout from './pages/Workout.jsx'
+import Nutrition from './pages/Nutrition.jsx'
+import Progress from './pages/Progress.jsx'
 import ProtectedRoute from './routes/ProtectedRoute.jsx'
 
 export default function App() {
@@ -28,6 +31,9 @@ export default function App() {
         <Route path="/dashboard" element={<Dashboard />} />
         <Route path="/profile" element={<Profile />} />
         <Route path="/settings" element={<Settings />} />
+        <Route path="/workout" element={<Workout />} />
+        <Route path="/nutrition" element={<Nutrition />} />
+        <Route path="/progress" element={<Progress />} />
       </Route>
 
       <Route path="*" element={<Landing />} />

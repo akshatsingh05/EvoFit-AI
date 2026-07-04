@@ -1,12 +1,14 @@
 import { NavLink } from 'react-router-dom'
+import { LayoutDashboard, Dumbbell, Salad, TrendingUp, User, Settings as SettingsIcon } from 'lucide-react'
+import logo from '../../assets/logo.png'
 
 const NAV_ITEMS = [
-  { to: '/dashboard', label: 'Dashboard', icon: '⌂', available: true },
-  { to: '/workout', label: 'Workout', icon: '◆', available: false },
-  { to: '/nutrition', label: 'Nutrition', icon: '◐', available: false },
-  { to: '/progress', label: 'Progress', icon: '▲', available: false },
-  { to: '/profile', label: 'Profile', icon: '●', available: true },
-  { to: '/settings', label: 'Settings', icon: '◈', available: true },
+  { to: '/dashboard', label: 'Dashboard', icon: LayoutDashboard, available: true },
+  { to: '/workout', label: 'Workout', icon: Dumbbell, available: true },
+  { to: '/nutrition', label: 'Nutrition', icon: Salad, available: true },
+  { to: '/progress', label: 'Progress', icon: TrendingUp, available: true },
+  { to: '/profile', label: 'Profile', icon: User, available: true },
+  { to: '/settings', label: 'Settings', icon: SettingsIcon, available: true },
 ]
 
 export default function Sidebar({ open, onClose }) {
@@ -29,15 +31,14 @@ export default function Sidebar({ open, onClose }) {
         `}
       >
         <div className="flex items-center gap-sm px-lg h-[64px] border-b border-divider">
-          <span className="h-8 w-8 rounded-md bg-primary flex items-center justify-center">
-            <span className="text-on-primary font-display font-bold text-body-sm">E</span>
-          </span>
+          <img src={logo} alt="EvoFit AI" className="h-8 w-8 rounded-md object-cover" />
           <span className="font-display font-bold text-label-lg text-on-surface">EvoFit AI</span>
         </div>
 
         <nav className="flex-1 px-md py-lg space-y-xs">
-          {NAV_ITEMS.map((item) =>
-            item.available ? (
+          {NAV_ITEMS.map((item) => {
+            const Icon = item.icon
+            return item.available ? (
               <NavLink
                 key={item.to}
                 to={item.to}
@@ -47,7 +48,7 @@ export default function Sidebar({ open, onClose }) {
                   ${isActive ? 'bg-primary/10 text-primary' : 'text-on-surface-variant hover:bg-surface-container'}
                 `}
               >
-                <span aria-hidden>{item.icon}</span>
+                <Icon size={18} aria-hidden />
                 {item.label}
               </NavLink>
             ) : (
@@ -57,13 +58,13 @@ export default function Sidebar({ open, onClose }) {
                 title="Coming soon"
               >
                 <span className="flex items-center gap-md">
-                  <span aria-hidden>{item.icon}</span>
+                  <Icon size={18} aria-hidden />
                   {item.label}
                 </span>
                 <span className="text-label-sm bg-surface-container-high px-sm rounded-full">Soon</span>
               </div>
             )
-          )}
+          })}
         </nav>
       </aside>
     </>

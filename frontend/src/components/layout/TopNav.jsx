@@ -1,4 +1,5 @@
 import ProfileDropdown from './ProfileDropdown.jsx'
+import NotificationsPanel from './NotificationsPanel.jsx'
 
 export default function TopNav({ onMenuClick, title }) {
   return (
@@ -15,13 +16,7 @@ export default function TopNav({ onMenuClick, title }) {
       </div>
 
       <div className="flex items-center gap-md">
-        <button
-          className="relative h-9 w-9 rounded-full flex items-center justify-center text-on-surface-variant hover:bg-surface-container"
-          aria-label="Notifications"
-          title="Notifications coming soon"
-        >
-          🔔
-        </button>
+        <NotificationsPanel />
         <ProfileDropdown />
       </div>
     </header>

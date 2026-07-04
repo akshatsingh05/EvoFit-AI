@@ -4,8 +4,8 @@ import Button from '../ui/Button.jsx'
 
 const ACTION_CONFIG = {
   complete_onboarding: { label: 'Finish onboarding', to: '/onboarding' },
-  generate_workout_plan: { label: 'Generate workout plan', disabled: true },
-  generate_nutrition_plan: { label: 'Generate nutrition plan', disabled: true },
+  view_workout: { label: "View today's workout", to: '/workout' },
+  view_nutrition: { label: "View today's nutrition", to: '/nutrition' },
   view_profile: { label: 'View profile', to: '/profile' },
   edit_settings: { label: 'Edit settings', to: '/settings' },
 }

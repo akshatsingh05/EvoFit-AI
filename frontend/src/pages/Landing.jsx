@@ -1,22 +1,27 @@
 import { Link } from 'react-router-dom'
+import { Dumbbell, Salad, ClipboardCheck } from 'lucide-react'
 import Button from '../components/ui/Button.jsx'
 import Card from '../components/ui/Card.jsx'
+import logo from '../assets/logo.png'
 
 const FEATURES = [
   {
     title: 'AI-generated workouts',
     body: 'Every plan is built for your goals, equipment and experience — never a generic template.',
     accent: 'primary',
+    Icon: Dumbbell,
   },
   {
     title: 'Adaptive nutrition',
     body: 'Meal plans that respect your diet type and adjust as your calorie needs change.',
     accent: 'secondary',
+    Icon: Salad,
   },
   {
     title: 'Daily check-ins',
     body: 'Log recovery and effort each day so your coaching actually responds to how you feel.',
     accent: 'tertiary',
+    Icon: ClipboardCheck,
   },
 ]
 
@@ -31,9 +36,7 @@ export default function Landing() {
     <div className="min-h-screen bg-background">
       <nav className="px-container py-md flex items-center justify-between max-w-[1100px] mx-auto">
         <div className="flex items-center gap-sm">
-          <span className="h-9 w-9 rounded-md bg-primary flex items-center justify-center">
-            <span className="text-on-primary font-display font-bold text-body-md">E</span>
-          </span>
+          <img src={logo} alt="EvoFit AI" className="h-9 w-9 rounded-md object-cover" />
           <span className="font-display font-bold text-headline-sm text-on-surface">EvoFit AI</span>
         </div>
         <div className="flex items-center gap-md">
@@ -73,7 +76,7 @@ export default function Landing() {
           {FEATURES.map((f) => (
             <Card key={f.title}>
               <span className={`inline-flex h-10 w-10 items-center justify-center rounded-md mb-md ${ACCENT_BG[f.accent]}`}>
-                ●
+                <f.Icon size={20} aria-hidden />
               </span>
               <h3 className="text-headline-sm text-on-surface mb-sm">{f.title}</h3>
               <p className="text-body-md text-on-surface-variant">{f.body}</p>
