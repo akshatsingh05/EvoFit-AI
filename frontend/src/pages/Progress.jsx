@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useForm } from 'react-hook-form'
+import { Link } from 'react-router-dom'
 import AppLayout from '../layouts/AppLayout.jsx'
 import Card from '../components/ui/Card.jsx'
 import Input from '../components/ui/Input.jsx'
@@ -13,6 +14,11 @@ function todayIso() {
 
 function formatDayLabel(isoDate) {
   const d = new Date(isoDate + 'T00:00:00')
+  return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
+}
+
+function formatDateTimeLabel(isoDateTime) {
+  const d = new Date(isoDateTime)
   return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
 }
 
@@ -74,6 +80,10 @@ export default function Progress() {
   }
 
   const weightPoints = data.weight_history.map((w) => ({ label: formatDayLabel(w.log_date), value: w.weight_kg }))
+  const recoveryPoints = data.recovery_history.map((r) => ({
+    label: formatDateTimeLabel(r.created_at),
+    value: r.recovery_score,
+  }))
 
   const completedWorkouts = data.workout_history.filter((w) => w.status === 'completed').length
   const skippedWorkouts = data.workout_history.filter((w) => w.status === 'skipped').length
@@ -95,11 +105,26 @@ export default function Progress() {
             {data.recovery_trend === null ? (
               <>
                 <p className="text-headline-md text-on-surface-variant">—</p>
-                <p className="text-body-sm text-on-surface-variant mt-xs">Available once daily check-ins start (Module 4).</p>
+                <p className="text-body-sm text-on-surface-variant mt-xs">
+                  <Link to="/checkin" className="text-secondary">Check in</Link> to start tracking recovery.
+                </p>
               </>
             ) : (
               <p className="text-headline-md text-primary">{data.recovery_trend[data.recovery_trend.length - 1]}</p>
             )}
+          </Card>
+        </div>
+
+        <div className="grid sm:grid-cols-2 gap-lg">
+          <Card>
+            <h3 className="text-label-lg font-display text-on-surface mb-sm">Workout consistency</h3>
+            <p className="text-headline-md text-primary">{data.workout_consistency_pct}<span className="text-body-md text-on-surface-variant">%</span></p>
+            <p className="text-body-sm text-on-surface-variant mt-xs">Completed vs. logged over the last 14 days</p>
+          </Card>
+          <Card>
+            <h3 className="text-label-lg font-display text-on-surface mb-sm">Nutrition consistency</h3>
+            <p className="text-headline-md text-secondary">{data.nutrition_consistency_pct}<span className="text-body-md text-on-surface-variant">%</span></p>
+            <p className="text-body-sm text-on-surface-variant mt-xs">Meals marked eaten over the last 14 days</p>
           </Card>
         </div>
 
@@ -108,6 +133,13 @@ export default function Progress() {
           points={weightPoints}
           unit=" kg"
           emptyMessage="Log your weight below to start tracking a trend."
+        />
+
+        <ProgressChart
+          title="Recovery history"
+          points={recoveryPoints}
+          unit="/100"
+          emptyMessage="Complete a daily check-in to start tracking your recovery score."
         />
 
         <Card>
@@ -182,6 +214,47 @@ export default function Progress() {
             )}
           </Card>
         </div>
+
+        <Card>
+          <h3 className="text-label-lg font-display text-on-surface mb-sm">Daily check-in history</h3>
+          {data.checkin_history.length === 0 ? (
+            <p className="text-body-sm text-on-surface-variant">
+              No check-ins yet. <Link to="/checkin" className="text-secondary">Do your first check-in.</Link>
+            </p>
+          ) : (
+            <ul className="text-body-sm text-on-surface-variant space-y-sm">
+              {data.checkin_history.slice(0, 7).map((c) => (
+                <li key={c.checkin_date} className="flex flex-wrap gap-x-md gap-y-xs justify-between border-b border-divider last:border-none pb-sm last:pb-0">
+                  <span className="font-medium text-on-surface">{formatDayLabel(c.checkin_date)}</span>
+                  <span className="capitalize">{c.mood}</span>
+                  <span>{c.sleep_hours}h sleep</span>
+                  <span>Energy {c.energy_level}/5</span>
+                  <span>Pain {c.pain_level}/5</span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </Card>
+
+        <Card>
+          <h3 className="text-label-lg font-display text-on-surface mb-sm">AI recommendation history</h3>
+          {data.ai_recommendation_history.length === 0 ? (
+            <p className="text-body-sm text-on-surface-variant">No recommendations generated yet.</p>
+          ) : (
+            <div className="space-y-md">
+              {data.ai_recommendation_history.slice(0, 5).map((entry) => (
+                <div key={entry.created_at} className="border-b border-divider last:border-none pb-md last:pb-0">
+                  <p className="text-label-sm text-on-surface-variant mb-xs">{formatDateTimeLabel(entry.created_at)}</p>
+                  <ul className="space-y-xs">
+                    {entry.recommendations.map((rec, i) => (
+                      <li key={i} className="text-body-sm text-on-surface">• {rec}</li>
+                    ))}
+                  </ul>
+                </div>
+              ))}
+            </div>
+          )}
+        </Card>
       </div>
     </AppLayout>
   )

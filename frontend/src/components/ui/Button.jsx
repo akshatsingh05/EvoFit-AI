@@ -24,6 +24,7 @@ export default function Button({
         font-display font-label-lg text-label-lg
         rounded-full px-lg h-[52px]
         transition-all duration-150
+        focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary
         disabled:opacity-50 disabled:cursor-not-allowed
         ${fullWidth ? 'w-full' : ''}
         ${VARIANTS[variant]}

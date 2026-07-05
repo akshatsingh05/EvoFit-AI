@@ -15,6 +15,8 @@ from app.models import (
     nutrition,
     progress,
     notification,
+    daily_checkin,
+    adaptive_insight,
 )  # noqa: F401
 
 from app.routers import (
@@ -29,6 +31,8 @@ from app.routers import (
     progress as progress_router,
     reports,
     notifications,
+    checkin,
+    adaptive,
 )
 
 Base.metadata.create_all(bind=engine)
@@ -54,6 +58,8 @@ app.include_router(nutrition_router.router)
 app.include_router(progress_router.router)
 app.include_router(reports.router)
 app.include_router(notifications.router)
+app.include_router(checkin.router)
+app.include_router(adaptive.router)
 
 
 @app.get("/health")

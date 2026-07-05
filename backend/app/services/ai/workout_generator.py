@@ -47,6 +47,7 @@ def build_workout_plan(context: dict) -> dict:
     fitness = context.get("fitness_experience") or {}
     goals = context.get("goals") or {}
     medical = context.get("medical") or {}
+    intensity_modifier = context.get("intensity_modifier", 0)  # -1, 0, or +1 from the adaptive engine
 
     experience = fitness.get("experience_level", "beginner")
     equipment = fitness.get("equipment_access", "none")
@@ -57,10 +58,13 @@ def build_workout_plan(context: dict) -> dict:
 
     base_days = {"beginner": 3, "intermediate": 4, "advanced": 5}.get(experience, 3)
     training_day_count = max(2, min(6, round((base_days + max(current_freq, base_days)) / 2)))
+    if intensity_modifier < 0:
+        training_day_count = max(2, training_day_count - 1)  # back off when fatigued
     training_indices = set(TRAINING_DAY_LAYOUT.get(training_day_count, TRAINING_DAY_LAYOUT[3]))
 
     split = SPLIT_BY_EXPERIENCE.get(experience, SPLIT_BY_EXPERIENCE["beginner"])
-    params = GOAL_PARAMS.get(primary_goal, GOAL_PARAMS["general_health"])
+    params = dict(GOAL_PARAMS.get(primary_goal, GOAL_PARAMS["general_health"]))
+    params["sets"] = max(2, min(5, params["sets"] + intensity_modifier))  # adaptive volume adjustment
     wants_cardio = "cardio" in preferred_types or primary_goal == "improve_endurance"
     wants_yoga = "yoga" in preferred_types
 

@@ -1,11 +1,12 @@
 import { NavLink } from 'react-router-dom'
-import { LayoutDashboard, Dumbbell, Salad, TrendingUp, User, Settings as SettingsIcon } from 'lucide-react'
+import { LayoutDashboard, Dumbbell, Salad, TrendingUp, ClipboardCheck, User, Settings as SettingsIcon } from 'lucide-react'
 import logo from '../../assets/logo.png'
 
 const NAV_ITEMS = [
   { to: '/dashboard', label: 'Dashboard', icon: LayoutDashboard, available: true },
   { to: '/workout', label: 'Workout', icon: Dumbbell, available: true },
   { to: '/nutrition', label: 'Nutrition', icon: Salad, available: true },
+  { to: '/checkin', label: 'Daily Check-In', icon: ClipboardCheck, available: true },
   { to: '/progress', label: 'Progress', icon: TrendingUp, available: true },
   { to: '/profile', label: 'Profile', icon: User, available: true },
   { to: '/settings', label: 'Settings', icon: SettingsIcon, available: true },

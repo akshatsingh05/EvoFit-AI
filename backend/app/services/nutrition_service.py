@@ -4,8 +4,20 @@ from sqlalchemy.orm import Session
 
 from app.models.user import User
 from app.models.nutrition import NutritionPlan, MealCompletion
+from app.models.adaptive_insight import AdaptiveInsight
 from app.services import onboarding_service, medical_history_service, notification_service
 from app.services.ai.nutrition_ai_service import generate_nutrition_targets
+
+
+def _latest_calorie_adjustment(db: Session, user: User) -> float:
+    """Pulls the most recent adaptive analysis so regenerated plans reflect it automatically."""
+    insight = (
+        db.query(AdaptiveInsight)
+        .filter(AdaptiveInsight.user_id == user.id)
+        .order_by(AdaptiveInsight.created_at.desc())
+        .first()
+    )
+    return insight.nutrition_calorie_adjustment if insight else 0.0
 
 
 def _build_context(db: Session, user: User) -> dict:
@@ -19,6 +31,7 @@ def _build_context(db: Session, user: User) -> dict:
         "medical": {
             "allergies": medical.allergies if medical else None,
         },
+        "adaptive_calorie_adjustment": _latest_calorie_adjustment(db, user),
     }
 
 

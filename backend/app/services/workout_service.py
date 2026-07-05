@@ -4,12 +4,24 @@ from sqlalchemy.orm import Session
 
 from app.models.user import User
 from app.models.workout import WorkoutPlan, WorkoutCompletion
+from app.models.adaptive_insight import AdaptiveInsight
 from app.services import onboarding_service, medical_history_service, notification_service
 from app.services.ai.workout_ai_service import generate_workout_schedule
 
 
 def _week_start(for_date: date) -> date:
     return for_date - timedelta(days=for_date.weekday())
+
+
+def _latest_intensity_modifier(db: Session, user: User) -> int:
+    """Pulls the most recent adaptive analysis so regenerated plans reflect it automatically."""
+    insight = (
+        db.query(AdaptiveInsight)
+        .filter(AdaptiveInsight.user_id == user.id)
+        .order_by(AdaptiveInsight.created_at.desc())
+        .first()
+    )
+    return insight.intensity_modifier if insight else 0
 
 
 def _build_context(db: Session, user: User) -> dict:
@@ -22,6 +34,7 @@ def _build_context(db: Session, user: User) -> dict:
             "injuries": (medical.injuries if medical else []) or [],
             "conditions": (medical.conditions if medical else []) or [],
         },
+        "intensity_modifier": _latest_intensity_modifier(db, user),
     }
 
 

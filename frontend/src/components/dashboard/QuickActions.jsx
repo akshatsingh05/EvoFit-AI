@@ -4,6 +4,7 @@ import Button from '../ui/Button.jsx'
 
 const ACTION_CONFIG = {
   complete_onboarding: { label: 'Finish onboarding', to: '/onboarding' },
+  daily_checkin: { label: "Do today's check-in", to: '/checkin', primary: true },
   view_workout: { label: "View today's workout", to: '/workout' },
   view_nutrition: { label: "View today's nutrition", to: '/nutrition' },
   view_profile: { label: 'View profile', to: '/profile' },
@@ -27,7 +28,7 @@ export default function QuickActions({ actions }) {
           }
           return (
             <Link key={key} to={config.to}>
-              <Button variant="secondary" className="h-10 px-md">
+              <Button variant={config.primary ? 'primary' : 'secondary'} className="h-10 px-md">
                 {config.label}
               </Button>
             </Link>

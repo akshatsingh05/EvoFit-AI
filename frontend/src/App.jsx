@@ -10,6 +10,7 @@ import Settings from './pages/Settings.jsx'
 import Workout from './pages/Workout.jsx'
 import Nutrition from './pages/Nutrition.jsx'
 import Progress from './pages/Progress.jsx'
+import DailyCheckIn from './pages/DailyCheckIn.jsx'
 import ProtectedRoute from './routes/ProtectedRoute.jsx'
 
 export default function App() {
@@ -34,6 +35,7 @@ export default function App() {
         <Route path="/workout" element={<Workout />} />
         <Route path="/nutrition" element={<Nutrition />} />
         <Route path="/progress" element={<Progress />} />
+        <Route path="/checkin" element={<DailyCheckIn />} />
       </Route>
 
       <Route path="*" element={<Landing />} />

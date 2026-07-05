@@ -1,11 +1,11 @@
 """
 Dashboard aggregation service.
 
-Design note: Module 4 (daily check-ins, adaptive AI) hasn't been built yet,
-so Recovery Score stays an honest `None` and the weekly chart's `has_checkin`
-flag stays `False` — those genuinely don't exist until that module ships.
-Everything else below now pulls from the real Module 3 workout/nutrition
-services rather than the "not_generated" placeholders Module 2 shipped with.
+Module 4 update: Recovery Score and AI Recommendations now come from a real
+AdaptiveInsight when one exists (generated from actual check-ins, workout
+completions, and weight history — see app/services/adaptive_service.py).
+Before any check-in/insight exists, these stay honest empty states rather
+than fabricated numbers.
 """
 from datetime import date, timedelta
 
@@ -14,31 +14,17 @@ from sqlalchemy.orm import Session
 from app.models.user import User
 from app.models.workout import WorkoutCompletion
 from app.schemas.dashboard import DashboardResponse, WorkoutSummary, NutritionSummary, WeeklyProgressPoint
-from app.services import onboarding_service, workout_service, nutrition_service
+from app.services import (
+    onboarding_service,
+    workout_service,
+    nutrition_service,
+    daily_checkin_service,
+    adaptive_service,
+    notification_service,
+)
+from app.services.fitness_score import compute_fitness_score
 
 DAY_LABELS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
-
-EXPERIENCE_POINTS = {"beginner": 20, "intermediate": 45, "advanced": 70}
-EQUIPMENT_POINTS = {"none": 5, "home_basic": 10, "full_gym": 15}
-
-
-def _compute_fitness_score(onboarding) -> tuple[int, str]:
-    """
-    Baseline fitness score (0-100) derived purely from onboarding answers:
-    experience level, current weekly training frequency, and equipment access.
-    This is a starting point only — Module 4's adaptive engine will recompute
-    it from real check-in and workout-completion data.
-    """
-    fitness_experience = onboarding.fitness_experience
-    if not fitness_experience:
-        return 0, "Complete onboarding to calculate your baseline score"
-
-    experience_score = EXPERIENCE_POINTS.get(fitness_experience.get("experience_level"), 0)
-    frequency_score = min(int(fitness_experience.get("workouts_per_week_current", 0)) * 3, 15)
-    equipment_score = EQUIPMENT_POINTS.get(fitness_experience.get("equipment_access"), 0)
-
-    score = min(experience_score + frequency_score + equipment_score, 100)
-    return score, "Baseline score from your experience level, current training frequency, and equipment access"
 
 
 def _generate_coach_tip(onboarding) -> str:
@@ -113,11 +99,14 @@ def _weekly_progress(db: Session, user: User) -> list[WeeklyProgressPoint]:
     )
     completed_dates = {c.workout_date for c in completions if c.status == "completed"}
 
+    checkins = daily_checkin_service.get_recent_checkins(db, user, days=7)
+    checkin_dates = {c.checkin_date for c in checkins}
+
     return [
         WeeklyProgressPoint(
             day_label=DAY_LABELS[i],
             workouts_completed=1 if (week_start + timedelta(days=i)) in completed_dates else 0,
-            has_checkin=False,  # requires Module 4 daily check-ins
+            has_checkin=(week_start + timedelta(days=i)) in checkin_dates,
         )
         for i in range(7)
     ]
@@ -125,7 +114,7 @@ def _weekly_progress(db: Session, user: User) -> list[WeeklyProgressPoint]:
 
 def get_dashboard(db: Session, user: User) -> DashboardResponse:
     onboarding = onboarding_service.get_onboarding(db, user)
-    fitness_score, fitness_score_basis = _compute_fitness_score(onboarding)
+    fitness_score, fitness_score_basis = compute_fitness_score(onboarding)
 
     if user.has_completed_onboarding:
         today_workout = _today_workout_summary(db, user)
@@ -140,14 +129,22 @@ def get_dashboard(db: Session, user: User) -> DashboardResponse:
             WeeklyProgressPoint(day_label=label, workouts_completed=0, has_checkin=False) for label in DAY_LABELS
         ]
 
-    # No daily check-in system exists yet (Module 4) — an honest null, not a fabricated number.
-    recovery_score = None
+    # Recovery score + recommendations come from the latest adaptive insight,
+    # which itself requires at least one check-in to be meaningful. Before
+    # that exists, this stays an honest null/empty list rather than a guess.
+    has_checked_in_today = daily_checkin_service.has_checked_in_today(db, user) if user.has_completed_onboarding else False
+    latest_insight = adaptive_service.get_latest_insight(db, user) if user.has_completed_onboarding else None
+    recovery_score = latest_insight.recovery_score if latest_insight else None
+    ai_recommendations = latest_insight.recommendations if latest_insight else []
 
     ai_coach_tip = _generate_coach_tip(onboarding)
+    unread_notifications_count = notification_service.unread_count(db, user)
 
     quick_actions = ["view_profile", "edit_settings"]
     if user.has_completed_onboarding:
         quick_actions = ["view_workout", "view_nutrition"] + quick_actions
+        if not has_checked_in_today:
+            quick_actions.insert(0, "daily_checkin")
     else:
         quick_actions.insert(0, "complete_onboarding")
 
@@ -162,5 +159,8 @@ def get_dashboard(db: Session, user: User) -> DashboardResponse:
         fitness_score_basis=fitness_score_basis,
         weekly_progress=weekly_progress,
         ai_coach_tip=ai_coach_tip,
+        ai_recommendations=ai_recommendations,
+        has_checked_in_today=has_checked_in_today,
+        unread_notifications_count=unread_notifications_count,
         quick_actions_available=quick_actions,
     )

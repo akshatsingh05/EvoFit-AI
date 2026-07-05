@@ -26,7 +26,7 @@ class DashboardResponse(BaseModel):
     today_workout: WorkoutSummary
     today_nutrition: NutritionSummary
 
-    recovery_score: int | None  # null until daily check-ins exist (Module 4)
+    recovery_score: int | None  # populated once an adaptive insight exists (Module 4)
     workout_streak_days: int
     fitness_score: int  # baseline score derived from onboarding profile
     fitness_score_basis: str  # explains what the score is derived from
@@ -34,5 +34,9 @@ class DashboardResponse(BaseModel):
     weekly_progress: list[WeeklyProgressPoint]
 
     ai_coach_tip: str
+    ai_recommendations: list[str]  # from the latest adaptive insight, empty until one exists
+
+    has_checked_in_today: bool
+    unread_notifications_count: int
 
     quick_actions_available: list[str]  # which quick actions are meaningful right now

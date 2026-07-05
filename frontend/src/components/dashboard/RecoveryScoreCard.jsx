@@ -1,3 +1,4 @@
+import { Link } from 'react-router-dom'
 import Card from '../ui/Card.jsx'
 
 export default function RecoveryScoreCard({ score }) {
@@ -8,11 +9,14 @@ export default function RecoveryScoreCard({ score }) {
         <>
           <p className="text-headline-md text-on-surface-variant">—</p>
           <p className="text-body-sm text-on-surface-variant mt-xs">
-            Available once daily check-ins start (Module 4).
+            <Link to="/checkin" className="text-secondary">Complete a check-in</Link> to get your first score.
           </p>
         </>
       ) : (
-        <p className="text-headline-md text-primary">{score}<span className="text-body-md text-on-surface-variant">/100</span></p>
+        <p className="text-headline-md text-primary">
+          {score}
+          <span className="text-body-md text-on-surface-variant">/100</span>
+        </p>
       )}
     </Card>
   )

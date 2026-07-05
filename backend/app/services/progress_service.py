@@ -1,4 +1,4 @@
-from datetime import date
+from datetime import date, timedelta
 from collections import defaultdict
 
 from sqlalchemy.orm import Session
@@ -6,8 +6,9 @@ from sqlalchemy.orm import Session
 from app.models.user import User
 from app.models.progress import WeightLog
 from app.models.nutrition import MealCompletion, NutritionPlan
-from app.services import workout_service, onboarding_service
-from app.services.dashboard_service import _compute_fitness_score
+from app.models.workout import WorkoutCompletion
+from app.services import workout_service, onboarding_service, daily_checkin_service, adaptive_service
+from app.services.fitness_score import compute_fitness_score
 
 
 def _seed_weight_log_if_needed(db: Session, user: User) -> None:
@@ -101,9 +102,35 @@ def get_today_nutrition_totals(db: Session, user: User) -> tuple[int, int]:
     return total_calories, total_protein
 
 
+def _workout_consistency_pct(db: Session, user: User, days: int = 14) -> int:
+    cutoff = date.today() - timedelta(days=days)
+    rows = (
+        db.query(WorkoutCompletion)
+        .filter(WorkoutCompletion.user_id == user.id, WorkoutCompletion.workout_date >= cutoff)
+        .all()
+    )
+    if not rows:
+        return 0
+    completed = sum(1 for r in rows if r.status == "completed")
+    return round((completed / len(rows)) * 100)
+
+
+def _nutrition_consistency_pct(db: Session, user: User, days: int = 14) -> int:
+    cutoff = date.today() - timedelta(days=days)
+    rows = (
+        db.query(MealCompletion)
+        .filter(MealCompletion.user_id == user.id, MealCompletion.meal_date >= cutoff)
+        .all()
+    )
+    if not rows:
+        return 0
+    completed = sum(1 for r in rows if r.status == "completed")
+    return round((completed / len(rows)) * 100)
+
+
 def get_progress(db: Session, user: User) -> dict:
     onboarding = onboarding_service.get_onboarding(db, user)
-    fitness_score, _basis = _compute_fitness_score(onboarding)
+    fitness_score, _basis = compute_fitness_score(onboarding)
 
     weight_history = get_weight_history(db, user)
     workout_history = workout_service.get_history(db, user)
@@ -111,13 +138,43 @@ def get_progress(db: Session, user: User) -> dict:
     streak = workout_service.compute_workout_streak(db, user)
     calories_today, protein_today = get_today_nutrition_totals(db, user)
 
+    insight_history = adaptive_service.get_insight_history(db, user)
+    recovery_trend = [i.recovery_score for i in reversed(insight_history)] if insight_history else None
+
+    checkins = daily_checkin_service.get_history(db, user, limit=30)
+
     return {
         "weight_history": [{"log_date": w.log_date, "weight_kg": w.weight_kg} for w in weight_history],
         "workout_history": [{"workout_date": w.workout_date, "status": w.status} for w in workout_history],
         "nutrition_adherence": nutrition_adherence,
         "workout_streak_days": streak,
         "fitness_score": fitness_score,
-        "recovery_trend": None,  # requires Module 4 daily check-ins
+        "recovery_trend": recovery_trend,
         "total_calories_logged_today": calories_today,
         "total_protein_logged_today": protein_today,
+        "recovery_history": [
+            {"created_at": i.created_at.isoformat(), "recovery_score": i.recovery_score}
+            for i in reversed(insight_history)
+        ],
+        "ai_recommendation_history": [
+            {
+                "created_at": i.created_at.isoformat(),
+                "recommendations": i.recommendations,
+                "intensity_modifier": i.intensity_modifier,
+            }
+            for i in insight_history
+        ],
+        "checkin_history": [
+            {
+                "checkin_date": c.checkin_date,
+                "mood": c.mood,
+                "energy_level": c.energy_level,
+                "sleep_hours": c.sleep_hours,
+                "muscle_soreness": c.muscle_soreness,
+                "pain_level": c.pain_level,
+            }
+            for c in checkins
+        ],
+        "workout_consistency_pct": _workout_consistency_pct(db, user),
+        "nutrition_consistency_pct": _nutrition_consistency_pct(db, user),
     }

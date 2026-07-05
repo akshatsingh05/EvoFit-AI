@@ -78,6 +78,8 @@ def build_nutrition_plan(context: dict) -> dict:
     bmr = _bmr(weight_kg, height_cm, age, sex)
     tdee = bmr * ACTIVITY_MULTIPLIERS.get(activity_level, 1.2)
     calorie_adjustment = GOAL_CALORIE_ADJUSTMENT.get(primary_goal, 0.0)
+    # Adaptive engine can nudge this further based on real weight-trend-vs-goal mismatch (Module 4)
+    calorie_adjustment += context.get("adaptive_calorie_adjustment", 0.0)
     target_calories = round(tdee * (1 + calorie_adjustment))
 
     protein_per_kg = GOAL_PROTEIN_PER_KG.get(primary_goal, 1.6)

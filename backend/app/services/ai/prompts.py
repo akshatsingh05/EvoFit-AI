@@ -45,3 +45,25 @@ def build_nutrition_prompt(context: dict) -> str:
         "intake goal in milliliters, then assign each meal a name, calories, protein, carbs and "
         "fat. Return structured JSON only."
     )
+
+
+def build_adaptive_prompt(context: dict) -> str:
+    checkins = context.get("recent_checkins") or []
+    workout_completions = context.get("recent_workout_statuses") or []
+    weight_history = context.get("weight_history") or []
+    goals = context.get("goals") or {}
+    medical = context.get("medical") or {}
+
+    return (
+        "You are an adaptive fitness coach reviewing a client's recent data. "
+        f"Over the last {len(checkins)} daily check-ins, review sleep hours, energy level, "
+        "muscle soreness, pain level, and mood. "
+        f"Workout completion record: {workout_completions}. "
+        f"Weight log entries: {weight_history}. "
+        f"Primary goal: {goals.get('primary_goal')}. "
+        f"Known injuries/conditions to respect: {medical.get('injuries')} / {medical.get('conditions')}. "
+        "Compute a recovery score (0-100), a training consistency percentage, whether the client "
+        "shows signs of fatigue, whether next week's training intensity should decrease, stay the "
+        "same, or increase, and give 2-4 short, specific coaching recommendations grounded in the "
+        "data above. Return structured JSON only."
+    )
