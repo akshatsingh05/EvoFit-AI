@@ -1,4 +1,5 @@
 from datetime import date, timedelta
+import uuid
 
 from sqlalchemy.orm import Session
 
@@ -24,28 +25,40 @@ def _latest_intensity_modifier(db: Session, user: User) -> int:
     return insight.intensity_modifier if insight else 0
 
 
-def _build_context(db: Session, user: User) -> dict:
+def _exercise_names_in_plan(plan: WorkoutPlan | None) -> list[str]:
+    if plan is None:
+        return []
+    return [ex["name"] for day in plan.schedule for ex in day.get("exercises", [])]
+
+
+def _build_context(db: Session, user: User, variation_seed: str, avoid_exercise_names: list[str]) -> dict:
     onboarding = onboarding_service.get_onboarding(db, user)
     medical = medical_history_service.get_medical_history(db, user)
     return {
         "goals": onboarding.goals,
         "fitness_experience": onboarding.fitness_experience,
+        "body_metrics": onboarding.body_metrics,
         "medical": {
             "injuries": (medical.injuries if medical else []) or [],
             "conditions": (medical.conditions if medical else []) or [],
+            "cleared_for_exercise": medical.cleared_for_exercise if medical else True,
         },
         "intensity_modifier": _latest_intensity_modifier(db, user),
+        "variation_seed": variation_seed,
+        "avoid_exercise_names": avoid_exercise_names,
     }
 
 
-def _generate_and_store(db: Session, user: User, week_start_date: date) -> WorkoutPlan:
-    context = _build_context(db, user)
+def _generate_and_store(
+    db: Session, user: User, week_start_date: date, variation_seed: str, avoid_exercise_names: list[str]
+) -> WorkoutPlan:
+    context = _build_context(db, user, variation_seed, avoid_exercise_names)
     result = generate_workout_schedule(context)
     plan = WorkoutPlan(
         user_id=user.id,
         week_start_date=week_start_date,
         schedule=result["schedule"],
-        generation_basis={"context": context, "prompt": result["prompt"]},
+        generation_basis={"context": context, "prompt": result["prompt"], "bmi": result.get("bmi")},
     )
     db.add(plan)
     db.commit()
@@ -62,13 +75,27 @@ def get_or_create_current_plan(db: Session, user: User) -> WorkoutPlan:
         .first()
     )
     if plan is None:
-        plan = _generate_and_store(db, user, week_start_date)
+        # Stable per user+week (so repeated GETs don't change the plan), but
+        # varies between users and between weeks. Avoid repeating last week's
+        # exercises for natural week-to-week variety.
+        previous_plan = (
+            db.query(WorkoutPlan)
+            .filter(WorkoutPlan.user_id == user.id, WorkoutPlan.week_start_date < week_start_date)
+            .order_by(WorkoutPlan.week_start_date.desc())
+            .first()
+        )
+        seed = f"{user.id}:{week_start_date.isoformat()}"
+        plan = _generate_and_store(db, user, week_start_date, seed, _exercise_names_in_plan(previous_plan))
     return plan
 
 
 def regenerate_current_plan(db: Session, user: User) -> WorkoutPlan:
     week_start_date = _week_start(date.today())
-    return _generate_and_store(db, user, week_start_date)
+    current_plan = get_current_plan_if_exists(db, user)
+    # Fresh nonce each call so regenerating twice in a row still gives
+    # different results, and explicitly avoid whatever's in the plan being replaced.
+    seed = f"{user.id}:{week_start_date.isoformat()}:{uuid.uuid4().hex}"
+    return _generate_and_store(db, user, week_start_date, seed, _exercise_names_in_plan(current_plan))
 
 
 def get_completions_for_plan(db: Session, user: User, plan: WorkoutPlan) -> dict[str, str]:

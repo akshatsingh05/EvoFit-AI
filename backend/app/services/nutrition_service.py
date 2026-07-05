@@ -1,4 +1,5 @@
 from datetime import date
+import uuid
 
 from sqlalchemy.orm import Session
 
@@ -20,7 +21,13 @@ def _latest_calorie_adjustment(db: Session, user: User) -> float:
     return insight.nutrition_calorie_adjustment if insight else 0.0
 
 
-def _build_context(db: Session, user: User) -> dict:
+def _meal_names_in_plan(plan: NutritionPlan | None) -> list[str]:
+    if plan is None:
+        return []
+    return [m["name"] for m in plan.meals]
+
+
+def _build_context(db: Session, user: User, variation_seed: str, avoid_meal_names: list[str]) -> dict:
     onboarding = onboarding_service.get_onboarding(db, user)
     medical = medical_history_service.get_medical_history(db, user)
     return {
@@ -30,13 +37,18 @@ def _build_context(db: Session, user: User) -> dict:
         "workouts_per_week": (onboarding.fitness_experience or {}).get("workouts_per_week_current", 0),
         "medical": {
             "allergies": medical.allergies if medical else None,
+            "conditions": (medical.conditions if medical else []) or [],
         },
         "adaptive_calorie_adjustment": _latest_calorie_adjustment(db, user),
+        "variation_seed": variation_seed,
+        "avoid_meal_names": avoid_meal_names,
     }
 
 
-def _generate_and_store(db: Session, user: User, plan_date: date) -> NutritionPlan:
-    context = _build_context(db, user)
+def _generate_and_store(
+    db: Session, user: User, plan_date: date, variation_seed: str, avoid_meal_names: list[str]
+) -> NutritionPlan:
+    context = _build_context(db, user, variation_seed, avoid_meal_names)
     result = generate_nutrition_targets(context)
     plan = NutritionPlan(
         user_id=user.id,
@@ -47,7 +59,7 @@ def _generate_and_store(db: Session, user: User, plan_date: date) -> NutritionPl
         target_fat_g=result["target_fat_g"],
         water_goal_ml=result["water_goal_ml"],
         meals=result["meals"],
-        generation_basis={"context": context, "prompt": result["prompt"]},
+        generation_basis={"context": context, "prompt": result["prompt"], "bmi": result.get("bmi")},
     )
     db.add(plan)
     db.commit()
@@ -64,12 +76,24 @@ def get_or_create_today_plan(db: Session, user: User) -> NutritionPlan:
         .first()
     )
     if plan is None:
-        plan = _generate_and_store(db, user, today)
+        # Stable per user+day (repeated GETs don't change it), varies between
+        # users, and avoids repeating yesterday's meals where possible.
+        yesterday_plan = (
+            db.query(NutritionPlan)
+            .filter(NutritionPlan.user_id == user.id, NutritionPlan.plan_date < today)
+            .order_by(NutritionPlan.plan_date.desc())
+            .first()
+        )
+        seed = f"{user.id}:{today.isoformat()}"
+        plan = _generate_and_store(db, user, today, seed, _meal_names_in_plan(yesterday_plan))
     return plan
 
 
 def regenerate_today_plan(db: Session, user: User) -> NutritionPlan:
-    return _generate_and_store(db, user, date.today())
+    today = date.today()
+    current_plan = get_today_plan_if_exists(db, user)
+    seed = f"{user.id}:{today.isoformat()}:{uuid.uuid4().hex}"
+    return _generate_and_store(db, user, today, seed, _meal_names_in_plan(current_plan))
 
 
 def record_meal_completion(db: Session, user: User, meal_date: date, meal_type: str, status: str) -> MealCompletion:
