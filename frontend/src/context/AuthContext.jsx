@@ -1,6 +1,7 @@
 import { createContext, useState, useEffect, useCallback } from 'react'
 import * as authService from '../services/authService'
 import * as settingsService from '../services/settingsService'
+import { clearSession } from '../services/api'
 import { useTheme } from './ThemeContext.jsx'
 
 export const AuthContext = createContext(null)
@@ -20,7 +21,9 @@ export function AuthProvider({ children }) {
       const currentUser = await authService.getCurrentUser()
       setUser(currentUser)
     } catch {
-      localStorage.removeItem('evofit_token')
+      // api.js's interceptor already attempts a token refresh transparently;
+      // if we land here the refresh also failed, so the session is invalid.
+      clearSession()
       setUser(null)
     } finally {
       setIsLoading(false)
@@ -52,6 +55,7 @@ export function AuthProvider({ children }) {
   const login = async (credentials) => {
     const data = await authService.login(credentials)
     localStorage.setItem('evofit_token', data.access_token)
+    localStorage.setItem('evofit_refresh_token', data.refresh_token)
     setUser(data.user)
     return data.user
   }
@@ -59,12 +63,17 @@ export function AuthProvider({ children }) {
   const signup = async (payload) => {
     const data = await authService.signup(payload)
     localStorage.setItem('evofit_token', data.access_token)
+    localStorage.setItem('evofit_refresh_token', data.refresh_token)
     setUser(data.user)
     return data.user
   }
 
   const logout = () => {
-    localStorage.removeItem('evofit_token')
+    const refreshToken = localStorage.getItem('evofit_refresh_token')
+    // Fire-and-forget: invalidate the refresh token server-side so it can't
+    // be reused, but don't block clearing the local session on it.
+    authService.logout(refreshToken)
+    clearSession()
     setUser(null)
   }
 

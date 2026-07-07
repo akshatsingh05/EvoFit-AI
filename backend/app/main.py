@@ -1,14 +1,25 @@
+import logging
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.trustedhost import TrustedHostMiddleware
+from slowapi import _rate_limit_exceeded_handler
+from slowapi.errors import RateLimitExceeded
 
 from app.core.config import settings
-from app.database.base import Base
-from app.database.session import engine
-from app.database.migrations import reset_incompatible_nutrition_tables
+from app.core.logging import configure_logging
+from app.core.exceptions import register_exception_handlers
+from app.core.rate_limit import limiter
+from app.middleware.security_headers import SecurityHeadersMiddleware
 
-# Import models so they're registered on Base.metadata before create_all runs
-from app.models import (
+# Import models so they're registered on Base.metadata. create_all() is no
+# longer called here -- schema is managed entirely by Alembic migrations
+# (see backend/alembic/ and DATABASE_MIGRATION_GUIDE.md). This import is
+# still required so SQLAlchemy relationships resolve and so Alembic's
+# autogenerate (env.py) sees every model.
+from app.models import (  # noqa: F401
     user,
+    refresh_token,
     onboarding,
     medical_history,
     user_settings,
@@ -18,7 +29,7 @@ from app.models import (
     notification,
     daily_checkin,
     adaptive_insight,
-)  # noqa: F401
+)
 
 from app.routers import (
     auth,
@@ -36,10 +47,28 @@ from app.routers import (
     adaptive,
 )
 
-reset_incompatible_nutrition_tables(engine)
-Base.metadata.create_all(bind=engine)
+configure_logging()
+logger = logging.getLogger("evofit.startup")
 
-app = FastAPI(title=settings.PROJECT_NAME)
+app = FastAPI(
+    title=settings.PROJECT_NAME,
+    description="AI-powered adaptive fitness and nutrition coaching API.",
+    version="3.0.0",
+    docs_url="/docs" if not settings.is_production else None,
+    redoc_url="/redoc" if not settings.is_production else None,
+    openapi_url="/openapi.json" if not settings.is_production else None,
+)
+
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+register_exception_handlers(app)
+
+app.add_middleware(SecurityHeadersMiddleware)
+
+app.add_middleware(
+    TrustedHostMiddleware,
+    allowed_hosts=settings.trusted_hosts_list,
+)
 
 app.add_middleware(
     CORSMiddleware,
@@ -64,6 +93,16 @@ app.include_router(checkin.router)
 app.include_router(adaptive.router)
 
 
+@app.on_event("startup")
+def on_startup() -> None:
+    logger.info(
+        "EvoFit AI backend starting | environment=%s debug=%s db=%s",
+        settings.ENVIRONMENT,
+        settings.DEBUG,
+        "postgresql" if not settings.DATABASE_URL.startswith("sqlite") else "sqlite",
+    )
+
+
 @app.get("/health")
 def health_check():
-    return {"status": "ok", "service": settings.PROJECT_NAME}
+    return {"status": "ok", "service": settings.PROJECT_NAME, "environment": settings.ENVIRONMENT}

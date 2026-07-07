@@ -1,0 +1,60 @@
+# Local/staging orchestration: Postgres + backend + frontend.
+# Not used in production deploys (Render/Vercel/Neon are configured
+# separately -- see render.yaml, vercel.json, and DEPLOYMENT_GUIDE.md) but
+# this is the closest local approximation of that topology, useful for
+# testing the PostgreSQL path and the built frontend/nginx image before
+# deploying.
+name: evofit-ai
+
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: evofit
+      POSTGRES_PASSWORD: evofit
+      POSTGRES_DB: evofit
+    volumes:
+      - evofit_pgdata:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U evofit"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  backend:
+    build:
+      context: ./backend
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      ENVIRONMENT: staging
+      DEBUG: "false"
+      DATABASE_URL: postgresql://evofit:evofit@db:5432/evofit
+      JWT_SECRET_KEY: ${JWT_SECRET_KEY:-local-compose-jwt-secret-change-me}
+      SECRET_KEY: ${SECRET_KEY:-local-compose-secret-change-me}
+      CORS_ORIGINS: http://localhost:5173,http://localhost:8080
+      TRUSTED_HOSTS: "*"
+      FRONTEND_URL: http://localhost:8080
+      BACKEND_URL: http://localhost:8000
+      RATE_LIMIT_ENABLED: "true"
+    ports:
+      - "8000:8000"
+
+  frontend:
+    build:
+      context: ./frontend
+      args:
+        VITE_API_BASE_URL: http://localhost:8000
+    restart: unless-stopped
+    depends_on:
+      - backend
+    ports:
+      - "8080:80"
+
+volumes:
+  evofit_pgdata:

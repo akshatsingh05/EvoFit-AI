@@ -3,9 +3,18 @@ from sqlalchemy.orm import sessionmaker
 
 from app.core.config import settings
 
-connect_args = {"check_same_thread": False} if settings.DATABASE_URL.startswith("sqlite") else {}
+is_sqlite = settings.DATABASE_URL.startswith("sqlite")
 
-engine = create_engine(settings.DATABASE_URL, connect_args=connect_args)
+# SQLite needs check_same_thread=False for FastAPI's threaded request
+# handling; pool_size/max_overflow are Postgres-only concepts (SQLite here
+# uses SQLAlchemy's default SingletonThreadPool/NullPool instead).
+connect_args = {"check_same_thread": False} if is_sqlite else {}
+engine_kwargs = {"pool_pre_ping": True}
+if not is_sqlite:
+    engine_kwargs["pool_size"] = settings.DB_POOL_SIZE
+    engine_kwargs["max_overflow"] = settings.DB_MAX_OVERFLOW
+
+engine = create_engine(settings.DATABASE_URL, connect_args=connect_args, **engine_kwargs)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 

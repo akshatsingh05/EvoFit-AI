@@ -4,6 +4,7 @@ import Landing from './pages/Landing.jsx'
 import Login from './pages/Login.jsx'
 import Signup from './pages/Signup.jsx'
 import ForgotPassword from './pages/ForgotPassword.jsx'
+import NotFound from './pages/NotFound.jsx'
 import ProtectedRoute from './routes/ProtectedRoute.jsx'
 
 // Lazy-loaded: these pull in the bulk of the app's component code (charts,
@@ -55,7 +56,7 @@ export default function App() {
           <Route path="/checkin" element={<DailyCheckIn />} />
         </Route>
 
-        <Route path="*" element={<Landing />} />
+        <Route path="*" element={<NotFound />} />
       </Routes>
     </Suspense>
   )
