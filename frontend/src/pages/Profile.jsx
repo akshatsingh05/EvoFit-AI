@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useForm } from 'react-hook-form'
+import { useNavigate } from 'react-router-dom'
 import AppLayout from '../layouts/AppLayout.jsx'
 import Card from '../components/ui/Card.jsx'
 import Input from '../components/ui/Input.jsx'
@@ -7,6 +8,7 @@ import Button from '../components/ui/Button.jsx'
 import Chip from '../components/ui/Chip.jsx'
 import * as profileService from '../services/profileService'
 import { useAuth } from '../hooks/useAuth.js'
+import { useToast } from '../context/ToastContext.jsx'
 
 function InfoRow({ label, value }) {
   if (value === undefined || value === null || value === '') return null
@@ -22,6 +24,8 @@ function InfoRow({ label, value }) {
 
 export default function Profile() {
   const { updateUser } = useAuth()
+  const { showToast } = useToast()
+  const navigate = useNavigate()
   const [profile, setProfile] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
@@ -40,7 +44,7 @@ export default function Profile() {
       try {
         const data = await profileService.getProfile()
         setProfile(data)
-        reset({ full_name: data.full_name })
+        reset({ full_name: data.full_name, email: data.email })
       } catch {
         setError('Could not load your profile.')
       } finally {
@@ -53,12 +57,14 @@ export default function Profile() {
   const onSubmit = async (values) => {
     setSaveError('')
     try {
-      const updated = await profileService.updateProfile({ fullName: values.full_name })
+      const updated = await profileService.updateProfile({ fullName: values.full_name, email: values.email })
       setProfile(updated)
       updateUser({ full_name: updated.full_name })
       setEditing(false)
+      showToast('Profile updated.', 'success')
     } catch (err) {
       setSaveError(err.response?.data?.detail || 'Could not save changes.')
+      showToast('Could not save changes.', 'error')
     }
   }
 
@@ -100,7 +106,15 @@ export default function Profile() {
                 error={errors.full_name?.message}
                 {...register('full_name', { required: 'Full name is required', minLength: { value: 2, message: 'Too short' } })}
               />
-              <Input label="Email" value={profile.email} disabled />
+              <Input
+                label="Email"
+                type="email"
+                error={errors.email?.message}
+                {...register('email', {
+                  required: 'Email is required',
+                  pattern: { value: /^\S+@\S+\.\S+$/, message: 'Enter a valid email' },
+                })}
+              />
               {saveError ? <p className="text-body-sm text-error">{saveError}</p> : null}
               <div className="flex gap-sm">
                 <Button type="submit" loading={isSubmitting}>Save changes</Button>
@@ -109,7 +123,7 @@ export default function Profile() {
                   variant="ghost"
                   onClick={() => {
                     setEditing(false)
-                    reset({ full_name: profile.full_name })
+                    reset({ full_name: profile.full_name, email: profile.email })
                   }}
                 >
                   Cancel
@@ -126,14 +140,24 @@ export default function Profile() {
         </Card>
 
         <Card>
-          <h2 className="text-headline-sm text-on-surface mb-md">Goals</h2>
+          <div className="flex items-center justify-between mb-md">
+            <h2 className="text-headline-sm text-on-surface">Goals</h2>
+            <Button variant="ghost" className="h-9 px-md" onClick={() => navigate('/profile/edit/goals')}>
+              Edit
+            </Button>
+          </div>
           <InfoRow label="Primary goal" value={profile.goals?.primary_goal} />
           <InfoRow label="Timeline (weeks)" value={profile.goals?.target_timeline_weeks} />
           <InfoRow label="Secondary goals" value={profile.goals?.secondary_goals} />
         </Card>
 
         <Card>
-          <h2 className="text-headline-sm text-on-surface mb-md">Body metrics</h2>
+          <div className="flex items-center justify-between mb-md">
+            <h2 className="text-headline-sm text-on-surface">Body metrics</h2>
+            <Button variant="ghost" className="h-9 px-md" onClick={() => navigate('/profile/edit/body-metrics')}>
+              Edit
+            </Button>
+          </div>
           <InfoRow label="Height" value={profile.body_metrics?.height_cm ? `${profile.body_metrics.height_cm} cm` : null} />
           <InfoRow label="Weight" value={profile.body_metrics?.weight_kg ? `${profile.body_metrics.weight_kg} kg` : null} />
           <InfoRow label="Age" value={profile.body_metrics?.age} />
@@ -141,14 +165,38 @@ export default function Profile() {
         </Card>
 
         <Card>
-          <h2 className="text-headline-sm text-on-surface mb-md">Fitness experience</h2>
+          <div className="flex items-center justify-between mb-md">
+            <h2 className="text-headline-sm text-on-surface">Fitness experience</h2>
+            <Button variant="ghost" className="h-9 px-md" onClick={() => navigate('/profile/edit/fitness-experience')}>
+              Edit
+            </Button>
+          </div>
           <InfoRow label="Level" value={profile.fitness_experience?.experience_level} />
           <InfoRow label="Workouts / week" value={profile.fitness_experience?.workouts_per_week_current} />
           <InfoRow label="Equipment" value={profile.fitness_experience?.equipment_access} />
         </Card>
 
         <Card>
-          <h2 className="text-headline-sm text-on-surface mb-md">Medical history</h2>
+          <div className="flex items-center justify-between mb-md">
+            <h2 className="text-headline-sm text-on-surface">Lifestyle & diet</h2>
+            <Button variant="ghost" className="h-9 px-md" onClick={() => navigate('/profile/edit/lifestyle-diet')}>
+              Edit
+            </Button>
+          </div>
+          <InfoRow label="Diet type" value={profile.lifestyle_diet?.diet_type} />
+          <InfoRow label="Meals / day" value={profile.lifestyle_diet?.meals_per_day} />
+          <InfoRow label="Avg sleep" value={profile.lifestyle_diet?.sleep_hours_avg ? `${profile.lifestyle_diet.sleep_hours_avg} hrs` : null} />
+          <InfoRow label="Stress level" value={profile.lifestyle_diet?.stress_level} />
+          <InfoRow label="Daily activity" value={profile.lifestyle_diet?.occupation_activity} />
+        </Card>
+
+        <Card>
+          <div className="flex items-center justify-between mb-md">
+            <h2 className="text-headline-sm text-on-surface">Medical history</h2>
+            <Button variant="ghost" className="h-9 px-md" onClick={() => navigate('/profile/edit/medical-history')}>
+              Edit
+            </Button>
+          </div>
           {profile.medical_conditions.length === 0 && profile.medical_injuries.length === 0 && !profile.medications ? (
             <p className="text-body-sm text-on-surface-variant">No medical history recorded.</p>
           ) : (

@@ -1,8 +1,11 @@
+from datetime import date, timedelta
+
 from sqlalchemy.orm import Session
 
 from app.models.user import User
 from app.models.adaptive_insight import AdaptiveInsight
 from app.models.progress import WeightLog
+from app.models.nutrition import MealCompletion
 from app.services import (
     onboarding_service,
     medical_history_service,
@@ -12,6 +15,22 @@ from app.services import (
     notification_service,
 )
 from app.services.ai.adaptive_ai_service import generate_adaptive_analysis
+from app.services.ai.adaptive_engine import compute_weight_trend
+from app.services.ai.coach_ai_service import generate_coach_insight
+
+
+def _get_nutrition_adherence_pct(db: Session, user: User, days: int = 14) -> float | None:
+    """
+    Reads MealCompletion directly rather than going through progress_service,
+    to avoid a circular import (progress_service also depends on this module
+    for recovery/recommendation history) — same pattern as _get_weight_history.
+    """
+    cutoff = date.today() - timedelta(days=days)
+    rows = db.query(MealCompletion).filter(MealCompletion.user_id == user.id, MealCompletion.meal_date >= cutoff).all()
+    if not rows:
+        return None
+    completed = sum(1 for r in rows if r.status == "completed")
+    return round((completed / len(rows)) * 100)
 
 
 def _get_weight_history(db: Session, user: User, limit: int = 30) -> list[dict]:
@@ -53,6 +72,8 @@ def _build_context(db: Session, user: User) -> dict:
     scheduled_training_days = sum(1 for day in current_plan.schedule if not day["is_rest_day"])
 
     weight_history = _get_weight_history(db, user)
+    nutrition_adherence_pct = _get_nutrition_adherence_pct(db, user)
+    workout_streak_days = workout_service.compute_workout_streak(db, user)
 
     return {
         "goals": onboarding.goals,
@@ -64,6 +85,9 @@ def _build_context(db: Session, user: User) -> dict:
         "recent_workout_statuses": recent_workout_statuses,
         "scheduled_training_days": scheduled_training_days,
         "weight_history": weight_history,
+        "nutrition_adherence_pct": nutrition_adherence_pct,
+        "workout_streak_days": workout_streak_days,
+        "variety_seed": date.today().toordinal(),
     }
 
 
@@ -124,3 +148,32 @@ def get_insight_history(db: Session, user: User, limit: int = 30) -> list[Adapti
         .limit(limit)
         .all()
     )
+
+
+def generate_coach_tip(db: Session, user: User) -> str:
+    """
+    The Dashboard's "AI Coach" tip: one short, personalized sentence combining
+    recovery, adherence, streak, and weight trend — replacing the old
+    onboarding-only placeholder. Cheap: doesn't create a new AdaptiveInsight
+    or regenerate any plans, just reads what already exists.
+    """
+    onboarding = onboarding_service.get_onboarding(db, user)
+    if not onboarding.goals:
+        return generate_coach_insight({"has_onboarding": False})["tip"]
+
+    latest_insight = get_latest_insight(db, user)
+    weight_history = _get_weight_history(db, user)
+    primary_goal = (onboarding.goals or {}).get("primary_goal")
+
+    context = {
+        "has_onboarding": True,
+        "goals": onboarding.goals,
+        "recovery_score": latest_insight.recovery_score if latest_insight else None,
+        "consistency_pct": latest_insight.consistency_pct if latest_insight else None,
+        "fatigue_flag": latest_insight.fatigue_flag if latest_insight else False,
+        "nutrition_adherence_pct": _get_nutrition_adherence_pct(db, user),
+        "workout_streak_days": workout_service.compute_workout_streak(db, user),
+        "weight_trend": compute_weight_trend(weight_history, primary_goal),
+        "variety_seed": date.today().toordinal(),
+    }
+    return generate_coach_insight(context)["tip"]

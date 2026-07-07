@@ -1,4 +1,4 @@
-export default function Card({ children, className = '', padded = true }) {
+export default function Card({ children, className = '', padded = true, ...rest }) {
   return (
     <div
       className={`
@@ -6,6 +6,7 @@ export default function Card({ children, className = '', padded = true }) {
         ${padded ? 'p-lg' : ''}
         ${className}
       `}
+      {...rest}
     >
       {children}
     </div>

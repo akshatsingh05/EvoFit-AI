@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime, date, timezone
 
-from sqlalchemy import String, DateTime, Date, ForeignKey, JSON, UniqueConstraint
+from sqlalchemy import String, DateTime, Date, ForeignKey, JSON, UniqueConstraint, Index
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database.base import Base
@@ -12,27 +12,31 @@ def _uuid() -> str:
 
 
 class NutritionPlan(Base):
-    """One generated daily nutrition target + meal plan per user per day."""
+    """
+    One generated weekly nutrition plan per user, mirroring WorkoutPlan's
+    architecture exactly (Sprint 2). `days` is a JSON list of 7 day objects:
+    {day_name, date, target_calories, target_protein_g, target_carbs_g,
+    target_fat_g, water_goal_ml, meals: [...]}. Regenerating creates a new
+    row rather than mutating history, so past weeks remain inspectable.
+    """
+
+    __table_args__ = (Index("ix_nutrition_plans_user_week", "user_id", "week_start_date"),)
 
     __tablename__ = "nutrition_plans"
 
     id: Mapped[str] = mapped_column(String, primary_key=True, default=_uuid)
     user_id: Mapped[str] = mapped_column(String, ForeignKey("users.id"), nullable=False, index=True)
-    plan_date: Mapped[date] = mapped_column(Date, nullable=False)
-    target_calories: Mapped[int] = mapped_column(nullable=False)
-    target_protein_g: Mapped[int] = mapped_column(nullable=False)
-    target_carbs_g: Mapped[int] = mapped_column(nullable=False)
-    target_fat_g: Mapped[int] = mapped_column(nullable=False)
-    water_goal_ml: Mapped[int] = mapped_column(nullable=False)
-    meals: Mapped[list] = mapped_column(JSON, nullable=False)  # [{meal_type, name, calories, protein_g, ...}]
-    generation_basis: Mapped[dict] = mapped_column(JSON, nullable=False)
+    week_start_date: Mapped[date] = mapped_column(Date, nullable=False)
+    days: Mapped[list] = mapped_column(JSON, nullable=False)
+    generation_basis: Mapped[dict] = mapped_column(JSON, nullable=False)  # snapshot of inputs used to generate it
     created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))
 
     user = relationship("User")
 
 
 class MealCompletion(Base):
-    """Tracks completed/skipped status for a single meal on a single date."""
+    """Tracks completed/skipped status for a single meal on a single date (unchanged from Sprint 1).
+    `plan_id` now points at the weekly NutritionPlan that contains `meal_date`."""
 
     __tablename__ = "meal_completions"
     __table_args__ = (

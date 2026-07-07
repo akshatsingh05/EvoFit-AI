@@ -1,51 +1,69 @@
 /** @type {import('tailwindcss').Config} */
+
+// Enables `bg-primary/10`-style opacity modifiers while colors are driven by
+// CSS variables (so the whole palette can swap for dark mode). Variables are
+// stored as "R G B" triplets in index.css.
+function withOpacity(variableName) {
+  return ({ opacityValue }) => {
+    if (opacityValue !== undefined) {
+      return `rgb(var(${variableName}) / ${opacityValue})`
+    }
+    return `rgb(var(${variableName}))`
+  }
+}
+
+const colorTokens = [
+  'surface',
+  'surface-dim',
+  'surface-bright',
+  'surface-container-lowest',
+  'surface-container-low',
+  'surface-container',
+  'surface-container-high',
+  'surface-container-highest',
+  'on-surface',
+  'on-surface-variant',
+  'inverse-surface',
+  'inverse-on-surface',
+  'outline',
+  'outline-variant',
+  'surface-tint',
+  'primary',
+  'on-primary',
+  'primary-container',
+  'on-primary-container',
+  'inverse-primary',
+  'secondary',
+  'on-secondary',
+  'secondary-container',
+  'on-secondary-container',
+  'tertiary',
+  'on-tertiary',
+  'tertiary-container',
+  'on-tertiary-container',
+  'error',
+  'on-error',
+  'error-container',
+  'on-error-container',
+  'primary-fixed',
+  'primary-fixed-dim',
+  'on-primary-fixed',
+  'on-primary-fixed-variant',
+  'background',
+  'on-background',
+  'surface-variant',
+  'input-fill',
+  'divider',
+]
+
+const colors = Object.fromEntries(colorTokens.map((token) => [token, withOpacity(`--color-${token}`)]))
+
 export default {
+  darkMode: 'class',
   content: ['./index.html', './src/**/*.{js,jsx}'],
   theme: {
     extend: {
-      colors: {
-        surface: '#f7f9fb',
-        'surface-dim': '#d8dadc',
-        'surface-bright': '#f7f9fb',
-        'surface-container-lowest': '#ffffff',
-        'surface-container-low': '#f2f4f6',
-        'surface-container': '#eceef0',
-        'surface-container-high': '#e6e8ea',
-        'surface-container-highest': '#e0e3e5',
-        'on-surface': '#191c1e',
-        'on-surface-variant': '#3d4a3d',
-        'inverse-surface': '#2d3133',
-        'inverse-on-surface': '#eff1f3',
-        outline: '#6d7b6c',
-        'outline-variant': '#bccbb9',
-        'surface-tint': '#006e2f',
-        primary: '#006e2f',
-        'on-primary': '#ffffff',
-        'primary-container': '#22c55e',
-        'on-primary-container': '#004b1e',
-        'inverse-primary': '#4ae176',
-        secondary: '#0058be',
-        'on-secondary': '#ffffff',
-        'secondary-container': '#2170e4',
-        'on-secondary-container': '#fefcff',
-        tertiary: '#855300',
-        'on-tertiary': '#ffffff',
-        'tertiary-container': '#ef9900',
-        'on-tertiary-container': '#5c3800',
-        error: '#ba1a1a',
-        'on-error': '#ffffff',
-        'error-container': '#ffdad6',
-        'on-error-container': '#93000a',
-        'primary-fixed': '#6bff8f',
-        'primary-fixed-dim': '#4ae176',
-        'on-primary-fixed': '#002109',
-        'on-primary-fixed-variant': '#005321',
-        background: '#f7f9fb',
-        'on-background': '#191c1e',
-        'surface-variant': '#e0e3e5',
-        'input-fill': '#f1f5f9',
-        'divider': '#f1f5f9',
-      },
+      colors,
       fontFamily: {
         display: ['"Plus Jakarta Sans"', 'sans-serif'],
         body: ['Inter', 'sans-serif'],
@@ -81,8 +99,11 @@ export default {
         gutter: '16px',
       },
       boxShadow: {
-        card: '0 4px 12px 0 rgba(15, 23, 42, 0.05)',
-        elevated: '0 8px 24px 0 rgba(15, 23, 42, 0.08)',
+        card: '0 4px 12px 0 rgb(0 0 0 / 0.05)',
+        elevated: '0 8px 24px 0 rgb(0 0 0 / 0.08)',
+      },
+      transitionProperty: {
+        colors: 'color, background-color, border-color, text-decoration-color, fill, stroke',
       },
     },
   },

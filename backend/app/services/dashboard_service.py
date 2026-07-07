@@ -27,36 +27,6 @@ from app.services.fitness_score import compute_fitness_score
 DAY_LABELS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
 
 
-def _generate_coach_tip(onboarding) -> str:
-    """
-    Rule-based tip generated from the user's actual profile fields.
-    This is deterministic backend logic, not an LLM call — real AI-generated
-    coaching tips are a future enhancement once a live model is wired in
-    (see app/services/ai/provider.py).
-    """
-    lifestyle = onboarding.lifestyle_diet
-    goals = onboarding.goals
-
-    if not goals:
-        return "Finish onboarding so your AI coach can start building your first plan."
-
-    if lifestyle and lifestyle.get("sleep_hours_avg", 8) < 6:
-        return "Your sleep has been on the lower side — aim for at least 7 hours tonight to support recovery."
-
-    if lifestyle and lifestyle.get("stress_level") == "high":
-        return "Stress levels look high. Consider a lighter session today and prioritize a wind-down routine."
-
-    primary_goal = goals.get("primary_goal")
-    if primary_goal == "build_muscle":
-        return "Consistency beats intensity for muscle growth — focus on hitting every planned session this week."
-    if primary_goal == "lose_weight":
-        return "Small, sustainable calorie deficits work best — pair your workouts with consistent meal timing."
-    if primary_goal == "improve_endurance":
-        return "Keep most of your cardio easy and reserve hard efforts for 1-2 sessions a week."
-
-    return "Check today's workout and nutrition plan to keep your streak going."
-
-
 def _today_workout_summary(db: Session, user: User) -> WorkoutSummary:
     plan = workout_service.get_or_create_current_plan(db, user)
     today = date.today()
@@ -137,7 +107,7 @@ def get_dashboard(db: Session, user: User) -> DashboardResponse:
     recovery_score = latest_insight.recovery_score if latest_insight else None
     ai_recommendations = latest_insight.recommendations if latest_insight else []
 
-    ai_coach_tip = _generate_coach_tip(onboarding)
+    ai_coach_tip = adaptive_service.generate_coach_tip(db, user)
     unread_notifications_count = notification_service.unread_count(db, user)
 
     quick_actions = ["view_profile", "edit_settings"]

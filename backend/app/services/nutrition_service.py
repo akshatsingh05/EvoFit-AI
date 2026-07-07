@@ -1,4 +1,5 @@
-from datetime import date
+from dataclasses import dataclass
+from datetime import date, datetime, timedelta
 import uuid
 
 from sqlalchemy.orm import Session
@@ -6,8 +7,36 @@ from sqlalchemy.orm import Session
 from app.models.user import User
 from app.models.nutrition import NutritionPlan, MealCompletion
 from app.models.adaptive_insight import AdaptiveInsight
-from app.services import onboarding_service, medical_history_service, notification_service
+from app.services import onboarding_service, medical_history_service, notification_service, week_utils
 from app.services.ai.nutrition_ai_service import generate_nutrition_targets
+
+DAY_NAMES = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
+
+# Re-exported for router convenience (single source of truth lives in week_utils,
+# shared with workout_service — see Sprint 2 architecture notes).
+week_start_for_offset = week_utils.week_start_for_offset
+get_registration_week_start = week_utils.get_registration_week_start
+is_week_before_registration = week_utils.is_week_before_registration
+
+
+@dataclass
+class TodayNutritionView:
+    """
+    Adapts a single day out of a weekly NutritionPlan into the flat shape
+    Dashboard/Adaptive/Progress/the existing `/nutrition` router already
+    expect (id, target_calories, ..., meals, created_at) — so none of those
+    call sites need to know NutritionPlan became weekly in Sprint 2.
+    """
+
+    id: str
+    week_start_date: date
+    target_calories: int
+    target_protein_g: int
+    target_carbs_g: int
+    target_fat_g: int
+    water_goal_ml: int
+    meals: list
+    created_at: datetime
 
 
 def _latest_calorie_adjustment(db: Session, user: User) -> float:
@@ -21,13 +50,29 @@ def _latest_calorie_adjustment(db: Session, user: User) -> float:
     return insight.nutrition_calorie_adjustment if insight else 0.0
 
 
+def _meal_names_in_day(day: dict) -> list[str]:
+    return [m["name"] for m in day.get("meals", [])]
+
+
 def _meal_names_in_plan(plan: NutritionPlan | None) -> list[str]:
     if plan is None:
         return []
-    return [m["name"] for m in plan.meals]
+    names: list[str] = []
+    for day in plan.days:
+        names.extend(_meal_names_in_day(day))
+    return names
 
 
-def _build_context(db: Session, user: User, variation_seed: str, avoid_meal_names: list[str]) -> dict:
+def get_day_from_plan(plan: NutritionPlan | None, target_date: date) -> dict | None:
+    """The reusable bridge from weekly storage to a single day's targets/meals.
+    Used by the router, Dashboard (via TodayNutritionView), Progress, and Reports."""
+    if plan is None:
+        return None
+    target_iso = target_date.isoformat()
+    return next((d for d in plan.days if d.get("date") == target_iso), None)
+
+
+def _build_base_context(db: Session, user: User) -> dict:
     onboarding = onboarding_service.get_onboarding(db, user)
     medical = medical_history_service.get_medical_history(db, user)
     return {
@@ -39,27 +84,51 @@ def _build_context(db: Session, user: User, variation_seed: str, avoid_meal_name
             "allergies": medical.allergies if medical else None,
             "conditions": (medical.conditions if medical else []) or [],
         },
-        "adaptive_calorie_adjustment": _latest_calorie_adjustment(db, user),
-        "variation_seed": variation_seed,
-        "avoid_meal_names": avoid_meal_names,
     }
 
 
-def _generate_and_store(
-    db: Session, user: User, plan_date: date, variation_seed: str, avoid_meal_names: list[str]
+def _generate_week_and_store(
+    db: Session, user: User, week_start_date: date, seed_suffix: str, avoid_meal_names_seed: list[str]
 ) -> NutritionPlan:
-    context = _build_context(db, user, variation_seed, avoid_meal_names)
-    result = generate_nutrition_targets(context)
+    """Generates all 7 days by calling the existing (untouched) Sprint 1 AI
+    generator once per day, carrying forward an accumulating avoid-list so
+    meals vary both within the week and from the previous week/version."""
+    base_context = _build_base_context(db, user)
+    calorie_adjustment = _latest_calorie_adjustment(db, user)
+
+    days = []
+    day_bases = []
+    running_avoid = list(avoid_meal_names_seed)
+
+    for i, day_name in enumerate(DAY_NAMES):
+        day_date = week_start_date + timedelta(days=i)
+        variation_seed = f"{user.id}:{week_start_date.isoformat()}:{day_name}:{seed_suffix}"
+        context = {
+            **base_context,
+            "adaptive_calorie_adjustment": calorie_adjustment,
+            "variation_seed": variation_seed,
+            "avoid_meal_names": running_avoid,
+        }
+        result = generate_nutrition_targets(context)
+        day_obj = {
+            "day_name": day_name,
+            "date": day_date.isoformat(),
+            "target_calories": result["target_calories"],
+            "target_protein_g": result["target_protein_g"],
+            "target_carbs_g": result["target_carbs_g"],
+            "target_fat_g": result["target_fat_g"],
+            "water_goal_ml": result["water_goal_ml"],
+            "meals": result["meals"],
+        }
+        days.append(day_obj)
+        day_bases.append({"day_name": day_name, "prompt": result["prompt"], "bmi": result.get("bmi")})
+        running_avoid = running_avoid + _meal_names_in_day(day_obj)
+
     plan = NutritionPlan(
         user_id=user.id,
-        plan_date=plan_date,
-        target_calories=result["target_calories"],
-        target_protein_g=result["target_protein_g"],
-        target_carbs_g=result["target_carbs_g"],
-        target_fat_g=result["target_fat_g"],
-        water_goal_ml=result["water_goal_ml"],
-        meals=result["meals"],
-        generation_basis={"context": context, "prompt": result["prompt"], "bmi": result.get("bmi")},
+        week_start_date=week_start_date,
+        days=days,
+        generation_basis={"context": base_context, "adaptive_calorie_adjustment": calorie_adjustment, "days": day_bases},
     )
     db.add(plan)
     db.commit()
@@ -67,40 +136,157 @@ def _generate_and_store(
     return plan
 
 
-def get_or_create_today_plan(db: Session, user: User) -> NutritionPlan:
-    today = date.today()
-    plan = (
+def _latest_plan_for_week(db: Session, user: User, week_start_date: date) -> NutritionPlan | None:
+    return (
         db.query(NutritionPlan)
-        .filter(NutritionPlan.user_id == user.id, NutritionPlan.plan_date == today)
+        .filter(NutritionPlan.user_id == user.id, NutritionPlan.week_start_date == week_start_date)
         .order_by(NutritionPlan.created_at.desc())
         .first()
     )
-    if plan is None:
-        # Stable per user+day (repeated GETs don't change it), varies between
-        # users, and avoids repeating yesterday's meals where possible.
-        yesterday_plan = (
-            db.query(NutritionPlan)
-            .filter(NutritionPlan.user_id == user.id, NutritionPlan.plan_date < today)
-            .order_by(NutritionPlan.plan_date.desc())
-            .first()
+
+
+def _adjacent_plan_for_avoidance(db: Session, user: User, week_start_date: date) -> NutritionPlan | None:
+    return (
+        db.query(NutritionPlan)
+        .filter(NutritionPlan.user_id == user.id, NutritionPlan.week_start_date < week_start_date)
+        .order_by(NutritionPlan.week_start_date.desc())
+        .first()
+    )
+
+
+def get_plan_for_week(db: Session, user: User, week_start_date: date) -> NutritionPlan | None:
+    """Mirrors workout_service.get_plan_for_week exactly. `None` means the
+    week is before the user's registration date and was never generated."""
+    plan = _latest_plan_for_week(db, user, week_start_date)
+    if plan is not None:
+        return plan
+
+    if week_utils.is_week_before_registration(week_start_date, user):
+        return None
+
+    previous_plan = _adjacent_plan_for_avoidance(db, user, week_start_date)
+    return _generate_week_and_store(db, user, week_start_date, "initial", _meal_names_in_plan(previous_plan))
+
+
+def regenerate_plan_for_week(db: Session, user: User, week_start_date: date) -> NutritionPlan:
+    if week_utils.is_week_before_registration(week_start_date, user) and _latest_plan_for_week(db, user, week_start_date) is None:
+        raise ValueError("Cannot regenerate a plan for a week before the user's registration date")
+
+    current_plan = _latest_plan_for_week(db, user, week_start_date)
+    nonce = uuid.uuid4().hex
+    return _generate_week_and_store(db, user, week_start_date, nonce, _meal_names_in_plan(current_plan))
+
+
+def build_plan_info(db: Session, user: User, plan: NutritionPlan) -> dict:
+    """Data for the Plan Information card, mirroring workout_service.build_plan_info."""
+    all_versions = (
+        db.query(NutritionPlan)
+        .filter(NutritionPlan.user_id == user.id, NutritionPlan.week_start_date == plan.week_start_date)
+        .order_by(NutritionPlan.created_at.asc())
+        .all()
+    )
+    context = (plan.generation_basis or {}).get("context", {})
+    goals = context.get("goals") or {}
+    avg_calories = round(sum(d["target_calories"] for d in plan.days) / len(plan.days)) if plan.days else None
+
+    return {
+        "generated_on": all_versions[0].created_at if all_versions else plan.created_at,
+        "current_goal": goals.get("primary_goal"),
+        "difficulty": None,
+        "calories_target": avg_calories,
+        "plan_version": len(all_versions) or 1,
+        "last_regenerated_at": plan.created_at if len(all_versions) > 1 else None,
+    }
+
+
+def list_nutrition_weeks_history(db: Session, user: User, limit: int = 12) -> list[NutritionPlan]:
+    current_week = week_utils.week_start(date.today())
+    rows = (
+        db.query(NutritionPlan)
+        .filter(NutritionPlan.user_id == user.id, NutritionPlan.week_start_date < current_week)
+        .order_by(NutritionPlan.week_start_date.desc(), NutritionPlan.created_at.desc())
+        .all()
+    )
+    seen_weeks = set()
+    history: list[NutritionPlan] = []
+    for row in rows:
+        if row.week_start_date in seen_weeks:
+            continue
+        seen_weeks.add(row.week_start_date)
+        history.append(row)
+        if len(history) >= limit:
+            break
+    return history
+
+
+def get_nutrition_history_entries(db: Session, user: User, limit: int = 12) -> list[dict]:
+    """Adapts weekly NutritionPlans into the shared HistoryEntry shape (see schemas/history.py)."""
+    entries = []
+    for plan in list_nutrition_weeks_history(db, user, limit):
+        week_end = plan.week_start_date + timedelta(days=6)
+        avg_calories = round(sum(d["target_calories"] for d in plan.days) / len(plan.days)) if plan.days else 0
+        completed_meals = (
+            db.query(MealCompletion)
+            .filter(
+                MealCompletion.user_id == user.id,
+                MealCompletion.meal_date.between(plan.week_start_date, week_end),
+                MealCompletion.status == "completed",
+            )
+            .count()
         )
-        seed = f"{user.id}:{today.isoformat()}"
-        plan = _generate_and_store(db, user, today, seed, _meal_names_in_plan(yesterday_plan))
-    return plan
+        entries.append(
+            {
+                "period_start": plan.week_start_date,
+                "period_end": week_end,
+                "title": f"Week of {plan.week_start_date.strftime('%b %d').replace(' 0', ' ')}",
+                "summary": f"Avg {avg_calories} kcal/day · {completed_meals} meals logged",
+                "created_at": plan.created_at,
+                "detail_ref": plan.week_start_date.isoformat(),
+            }
+        )
+    return entries
 
 
-def regenerate_today_plan(db: Session, user: User) -> NutritionPlan:
-    today = date.today()
-    current_plan = get_today_plan_if_exists(db, user)
-    seed = f"{user.id}:{today.isoformat()}:{uuid.uuid4().hex}"
-    return _generate_and_store(db, user, today, seed, _meal_names_in_plan(current_plan))
+# --- Backward-compatible "today" entry points used by Dashboard/Adaptive/Progress ---
+
+
+def _today_view(week_plan: NutritionPlan | None, target_date: date) -> TodayNutritionView | None:
+    if week_plan is None:
+        return None
+    day = get_day_from_plan(week_plan, target_date)
+    if day is None:
+        return None
+    return TodayNutritionView(
+        id=week_plan.id,
+        week_start_date=week_plan.week_start_date,
+        target_calories=day["target_calories"],
+        target_protein_g=day["target_protein_g"],
+        target_carbs_g=day["target_carbs_g"],
+        target_fat_g=day["target_fat_g"],
+        water_goal_ml=day["water_goal_ml"],
+        meals=day["meals"],
+        created_at=week_plan.created_at,
+    )
+
+
+def get_or_create_today_plan(db: Session, user: User) -> TodayNutritionView:
+    week_plan = get_plan_for_week(db, user, week_utils.week_start(date.today()))
+    return _today_view(week_plan, date.today())
+
+
+def regenerate_today_plan(db: Session, user: User) -> TodayNutritionView:
+    week_plan = regenerate_plan_for_week(db, user, week_utils.week_start(date.today()))
+    return _today_view(week_plan, date.today())
+
+
+def get_today_plan_if_exists(db: Session, user: User) -> TodayNutritionView | None:
+    week_plan = _latest_plan_for_week(db, user, week_utils.week_start(date.today()))
+    return _today_view(week_plan, date.today())
 
 
 def record_meal_completion(db: Session, user: User, meal_date: date, meal_type: str, status: str) -> MealCompletion:
     if status not in ("completed", "skipped"):
         raise ValueError("status must be 'completed' or 'skipped'")
-
-    plan = get_or_create_today_plan(db, user) if meal_date == date.today() else None
 
     existing = (
         db.query(MealCompletion)
@@ -117,17 +303,28 @@ def record_meal_completion(db: Session, user: User, meal_date: date, meal_type: 
         db.refresh(existing)
         return existing
 
-    record = MealCompletion(
-        user_id=user.id,
-        plan_id=plan.id if plan else get_or_create_today_plan(db, user).id,
-        meal_date=meal_date,
-        meal_type=meal_type,
-        status=status,
-    )
+    plan = get_plan_for_week(db, user, week_utils.week_start(meal_date))
+    if plan is None:
+        raise ValueError("No nutrition plan exists for that date")
+
+    record = MealCompletion(user_id=user.id, plan_id=plan.id, meal_date=meal_date, meal_type=meal_type, status=status)
     db.add(record)
     db.commit()
     db.refresh(record)
     return record
+
+
+def get_completions_for_week(db: Session, user: User, week_start_date: date) -> dict[str, dict[str, str]]:
+    week_end = week_start_date + timedelta(days=6)
+    rows = (
+        db.query(MealCompletion)
+        .filter(MealCompletion.user_id == user.id, MealCompletion.meal_date.between(week_start_date, week_end))
+        .all()
+    )
+    result: dict[str, dict[str, str]] = {}
+    for row in rows:
+        result.setdefault(row.meal_date.isoformat(), {})[row.meal_type] = row.status
+    return result
 
 
 def get_completions_for_date(db: Session, user: User, meal_date: date) -> dict[str, str]:
@@ -146,14 +343,4 @@ def get_history(db: Session, user: User, limit: int = 60) -> list[MealCompletion
         .order_by(MealCompletion.meal_date.desc())
         .limit(limit)
         .all()
-    )
-
-
-def get_today_plan_if_exists(db: Session, user: User) -> NutritionPlan | None:
-    today = date.today()
-    return (
-        db.query(NutritionPlan)
-        .filter(NutritionPlan.user_id == user.id, NutritionPlan.plan_date == today)
-        .order_by(NutritionPlan.created_at.desc())
-        .first()
     )

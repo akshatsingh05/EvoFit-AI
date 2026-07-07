@@ -50,7 +50,7 @@ export default function GoalsStep({ defaultValues, onBack, onNext, stepIndex, st
       subtitle="This shapes the entire structure of your plan."
       onBack={onBack}
       onNext={handleSubmit(onNext)}
-      showBack={stepIndex > 1}
+      showBack={stepIndex > 1 || stepCount === 1}
       nextDisabled={!primaryGoal}
       nextLoading={saving}
     >

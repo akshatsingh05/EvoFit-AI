@@ -6,12 +6,14 @@ from sqlalchemy.orm import Session
 from app.models.user import User
 from app.models.workout import WorkoutPlan, WorkoutCompletion
 from app.models.adaptive_insight import AdaptiveInsight
-from app.services import onboarding_service, medical_history_service, notification_service
+from app.services import onboarding_service, medical_history_service, notification_service, week_utils
 from app.services.ai.workout_ai_service import generate_workout_schedule
 
 
-def _week_start(for_date: date) -> date:
-    return for_date - timedelta(days=for_date.weekday())
+_week_start = week_utils.week_start
+week_start_for_offset = week_utils.week_start_for_offset
+get_registration_week_start = week_utils.get_registration_week_start
+is_week_before_registration = week_utils.is_week_before_registration
 
 
 def _latest_intensity_modifier(db: Session, user: User) -> int:
@@ -66,36 +68,196 @@ def _generate_and_store(
     return plan
 
 
-def get_or_create_current_plan(db: Session, user: User) -> WorkoutPlan:
-    week_start_date = _week_start(date.today())
-    plan = (
+def _latest_plan_for_week(db: Session, user: User, week_start_date: date) -> WorkoutPlan | None:
+    return (
         db.query(WorkoutPlan)
         .filter(WorkoutPlan.user_id == user.id, WorkoutPlan.week_start_date == week_start_date)
         .order_by(WorkoutPlan.created_at.desc())
         .first()
     )
-    if plan is None:
-        # Stable per user+week (so repeated GETs don't change the plan), but
-        # varies between users and between weeks. Avoid repeating last week's
-        # exercises for natural week-to-week variety.
-        previous_plan = (
-            db.query(WorkoutPlan)
-            .filter(WorkoutPlan.user_id == user.id, WorkoutPlan.week_start_date < week_start_date)
-            .order_by(WorkoutPlan.week_start_date.desc())
-            .first()
-        )
-        seed = f"{user.id}:{week_start_date.isoformat()}"
-        plan = _generate_and_store(db, user, week_start_date, seed, _exercise_names_in_plan(previous_plan))
-    return plan
 
 
-def regenerate_current_plan(db: Session, user: User) -> WorkoutPlan:
-    week_start_date = _week_start(date.today())
-    current_plan = get_current_plan_if_exists(db, user)
+def _adjacent_plan_for_avoidance(db: Session, user: User, week_start_date: date) -> WorkoutPlan | None:
+    """The most recent plan from an earlier week, used only to seed exercise variety."""
+    return (
+        db.query(WorkoutPlan)
+        .filter(WorkoutPlan.user_id == user.id, WorkoutPlan.week_start_date < week_start_date)
+        .order_by(WorkoutPlan.week_start_date.desc())
+        .first()
+    )
+
+
+def get_plan_for_week(db: Session, user: User, week_start_date: date) -> WorkoutPlan | None:
+    """
+    Fetches the plan for an arbitrary week, generating one if missing —
+    unless the week falls entirely before the user registered, in which case
+    `None` is returned so the caller can show a "no plan existed yet" state.
+    Stable per user+week: repeated calls for the same week never change it;
+    only `regenerate_plan_for_week` creates a new version.
+    """
+    plan = _latest_plan_for_week(db, user, week_start_date)
+    if plan is not None:
+        return plan
+
+    if is_week_before_registration(week_start_date, user):
+        return None
+
+    previous_plan = _adjacent_plan_for_avoidance(db, user, week_start_date)
+    seed = f"{user.id}:{week_start_date.isoformat()}"
+    return _generate_and_store(db, user, week_start_date, seed, _exercise_names_in_plan(previous_plan))
+
+
+def regenerate_plan_for_week(db: Session, user: User, week_start_date: date) -> WorkoutPlan:
+    if is_week_before_registration(week_start_date, user) and _latest_plan_for_week(db, user, week_start_date) is None:
+        raise ValueError("Cannot regenerate a plan for a week before the user's registration date")
+
+    current_plan = _latest_plan_for_week(db, user, week_start_date)
     # Fresh nonce each call so regenerating twice in a row still gives
     # different results, and explicitly avoid whatever's in the plan being replaced.
     seed = f"{user.id}:{week_start_date.isoformat()}:{uuid.uuid4().hex}"
     return _generate_and_store(db, user, week_start_date, seed, _exercise_names_in_plan(current_plan))
+
+
+def get_or_create_current_plan(db: Session, user: User) -> WorkoutPlan:
+    """Kept for Dashboard/Adaptive/Progress, which only ever care about 'this week'."""
+    return get_plan_for_week(db, user, _week_start(date.today()))
+
+
+def regenerate_current_plan(db: Session, user: User) -> WorkoutPlan:
+    return regenerate_plan_for_week(db, user, _week_start(date.today()))
+
+
+def build_plan_info(db: Session, user: User, plan: WorkoutPlan) -> dict:
+    """Data for the Plan Information card: why this plan looks the way it does."""
+    all_versions = (
+        db.query(WorkoutPlan)
+        .filter(WorkoutPlan.user_id == user.id, WorkoutPlan.week_start_date == plan.week_start_date)
+        .order_by(WorkoutPlan.created_at.asc())
+        .all()
+    )
+    context = (plan.generation_basis or {}).get("context", {})
+    goals = context.get("goals") or {}
+    fitness_experience = context.get("fitness_experience") or {}
+    workout_days = sum(1 for day in plan.schedule if not day.get("is_rest_day"))
+
+    return {
+        "generated_on": all_versions[0].created_at if all_versions else plan.created_at,
+        "current_goal": goals.get("primary_goal"),
+        "difficulty": fitness_experience.get("experience_level"),
+        "workout_days": workout_days,
+        "plan_version": len(all_versions) or 1,
+        "last_regenerated_at": plan.created_at if len(all_versions) > 1 else None,
+    }
+
+
+def list_workout_weeks_history(db: Session, user: User, limit: int = 12) -> list[WorkoutPlan]:
+    """One (latest) plan per past week, most recent first — the Workout History list."""
+    current_week = _week_start(date.today())
+    rows = (
+        db.query(WorkoutPlan)
+        .filter(WorkoutPlan.user_id == user.id, WorkoutPlan.week_start_date < current_week)
+        .order_by(WorkoutPlan.week_start_date.desc(), WorkoutPlan.created_at.desc())
+        .all()
+    )
+    seen_weeks = set()
+    history: list[WorkoutPlan] = []
+    for row in rows:
+        if row.week_start_date in seen_weeks:
+            continue
+        seen_weeks.add(row.week_start_date)
+        history.append(row)
+        if len(history) >= limit:
+            break
+    return history
+
+
+def get_workout_history_entries(db: Session, user: User, limit: int = 12) -> list[dict]:
+    """Adapts weekly WorkoutPlans into the shared HistoryEntry shape (see schemas/history.py)."""
+    entries = []
+    for plan in list_workout_weeks_history(db, user, limit):
+        completions = get_completions_for_plan(db, user, plan)
+        completed = sum(1 for status in completions.values() if status == "completed")
+        active_days = sum(1 for day in plan.schedule if not day.get("is_rest_day"))
+        week_end = plan.week_start_date + timedelta(days=6)
+        entries.append(
+            {
+                "period_start": plan.week_start_date,
+                "period_end": week_end,
+                "title": f"Week of {plan.week_start_date.strftime('%b %d').replace(' 0', ' ')}",
+                "summary": f"{active_days} workout days · {completed} completed",
+                "created_at": plan.created_at,
+                "detail_ref": plan.week_start_date.isoformat(),
+            }
+        )
+    return entries
+
+
+def get_calendar_data(db: Session, user: User, start_date: date, end_date: date) -> list[dict]:
+    """
+    Builds a per-day status list for the Workout Calendar view. Weeks are
+    fetched (and generated, per the same registration-date rule as week nav)
+    once per distinct week in the range, not once per day.
+    """
+    today = date.today()
+    week_cache: dict[date, WorkoutPlan | None] = {}
+    completions_cache: dict[date, dict[str, str]] = {}
+    days = []
+
+    cursor = start_date
+    while cursor <= end_date:
+        week_start = _week_start(cursor)
+        if week_start not in week_cache:
+            week_cache[week_start] = get_plan_for_week(db, user, week_start)
+            if week_cache[week_start] is not None:
+                completions_cache[week_start] = get_completions_for_plan(db, user, week_cache[week_start])
+
+        plan = week_cache[week_start]
+        if plan is None:
+            days.append({"date": cursor, "status": "no_plan", "workout": None})
+            cursor += timedelta(days=1)
+            continue
+
+        day = plan.schedule[cursor.weekday()]
+        if day.get("is_rest_day"):
+            days.append({"date": cursor, "status": "rest", "workout": None})
+            cursor += timedelta(days=1)
+            continue
+
+        completion_status = completions_cache[week_start].get(cursor.isoformat())
+        if completion_status == "completed":
+            status = "completed"
+        elif completion_status == "skipped":
+            status = "skipped"
+        elif cursor > today:
+            status = "upcoming"
+        elif cursor == today:
+            status = "upcoming"  # today, not yet logged
+        else:
+            status = "missed"  # past day, non-rest, never logged
+
+        days.append(
+            {
+                "date": cursor,
+                "status": status,
+                "workout": {
+                    "focus": day.get("focus"),
+                    "exercises": day.get("exercises", []),
+                    "duration_minutes": day.get("estimated_duration_minutes", 0),
+                    "completion_status": completion_status,
+                },
+            }
+        )
+        cursor += timedelta(days=1)
+
+    return days
+
+
+def get_completions_for_week(db: Session, user: User, plan: WorkoutPlan | None) -> dict[str, str]:
+    """Thin alias kept explicit for the week-nav completions endpoint; `plan` may be None
+    (week before registration), in which case there's nothing to look up."""
+    if plan is None:
+        return {}
+    return get_completions_for_plan(db, user, plan)
 
 
 def get_completions_for_plan(db: Session, user: User, plan: WorkoutPlan) -> dict[str, str]:
@@ -180,10 +342,4 @@ def get_history(db: Session, user: User, limit: int = 60) -> list[WorkoutComplet
 
 
 def get_current_plan_if_exists(db: Session, user: User) -> WorkoutPlan | None:
-    week_start_date = _week_start(date.today())
-    return (
-        db.query(WorkoutPlan)
-        .filter(WorkoutPlan.user_id == user.id, WorkoutPlan.week_start_date == week_start_date)
-        .order_by(WorkoutPlan.created_at.desc())
-        .first()
-    )
+    return _latest_plan_for_week(db, user, _week_start(date.today()))

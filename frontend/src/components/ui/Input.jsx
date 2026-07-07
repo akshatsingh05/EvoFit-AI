@@ -1,9 +1,12 @@
-import { forwardRef } from 'react'
+import { forwardRef, useId } from 'react'
 
 const Input = forwardRef(function Input(
-  { label, error, type = 'text', placeholder, className = '', ...rest },
+  { label, error, type = 'text', placeholder, className = '', id, ...rest },
   ref
 ) {
+  const generatedId = useId()
+  const errorId = error ? `${id || generatedId}-error` : undefined
+
   return (
     <label className="block">
       {label ? (
@@ -11,8 +14,11 @@ const Input = forwardRef(function Input(
       ) : null}
       <input
         ref={ref}
+        id={id}
         type={type}
         placeholder={placeholder}
+        aria-invalid={error ? 'true' : undefined}
+        aria-describedby={errorId}
         className={`
           w-full h-[56px] px-md
           bg-input-fill rounded-md
@@ -25,7 +31,11 @@ const Input = forwardRef(function Input(
         `}
         {...rest}
       />
-      {error ? <span className="block mt-xs text-body-sm text-error">{error}</span> : null}
+      {error ? (
+        <span id={errorId} role="alert" className="block mt-xs text-body-sm text-error">
+          {error}
+        </span>
+      ) : null}
     </label>
   )
 })

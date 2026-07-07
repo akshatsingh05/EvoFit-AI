@@ -56,3 +56,7 @@ def get_nutrition_provider(builder) -> AIProvider:
 
 def get_adaptive_provider(builder) -> AIProvider:
     return RuleBasedProvider(builder)
+
+
+def get_coach_provider(builder) -> AIProvider:
+    return RuleBasedProvider(builder)

@@ -4,6 +4,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.core.config import settings
 from app.database.base import Base
 from app.database.session import engine
+from app.database.migrations import reset_incompatible_nutrition_tables
 
 # Import models so they're registered on Base.metadata before create_all runs
 from app.models import (
@@ -35,6 +36,7 @@ from app.routers import (
     adaptive,
 )
 
+reset_incompatible_nutrition_tables(engine)
 Base.metadata.create_all(bind=engine)
 
 app = FastAPI(title=settings.PROJECT_NAME)

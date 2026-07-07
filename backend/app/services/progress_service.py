@@ -7,7 +7,7 @@ from app.models.user import User
 from app.models.progress import WeightLog
 from app.models.nutrition import MealCompletion, NutritionPlan
 from app.models.workout import WorkoutCompletion
-from app.services import workout_service, onboarding_service, daily_checkin_service, adaptive_service
+from app.services import workout_service, onboarding_service, daily_checkin_service, adaptive_service, nutrition_service, week_utils
 from app.services.fitness_score import compute_fitness_score
 
 
@@ -77,13 +77,14 @@ def get_nutrition_adherence(db: Session, user: User, limit_days: int = 14) -> li
 
 def get_today_nutrition_totals(db: Session, user: User) -> tuple[int, int]:
     today = date.today()
-    plan = (
+    week_plan = (
         db.query(NutritionPlan)
-        .filter(NutritionPlan.user_id == user.id, NutritionPlan.plan_date == today)
+        .filter(NutritionPlan.user_id == user.id, NutritionPlan.week_start_date == week_utils.week_start(today))
         .order_by(NutritionPlan.created_at.desc())
         .first()
     )
-    if plan is None:
+    day = nutrition_service.get_day_from_plan(week_plan, today) if week_plan else None
+    if day is None:
         return 0, 0
 
     completed_types = {
@@ -97,8 +98,8 @@ def get_today_nutrition_totals(db: Session, user: User) -> tuple[int, int]:
     if not completed_types:
         return 0, 0
 
-    total_calories = sum(m["calories"] for m in plan.meals if m["meal_type"] in completed_types)
-    total_protein = sum(m["protein_g"] for m in plan.meals if m["meal_type"] in completed_types)
+    total_calories = sum(m["calories"] for m in day["meals"] if m["meal_type"] in completed_types)
+    total_protein = sum(m["protein_g"] for m in day["meals"] if m["meal_type"] in completed_types)
     return total_calories, total_protein
 
 

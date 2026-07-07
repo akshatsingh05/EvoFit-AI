@@ -13,12 +13,14 @@ export default function Button({
   onClick,
   className = '',
   fullWidth = false,
+  ...rest
 }) {
   return (
     <button
       type={type}
       disabled={disabled || loading}
       onClick={onClick}
+      aria-busy={loading || undefined}
       className={`
         inline-flex items-center justify-center gap-sm
         font-display font-label-lg text-label-lg
@@ -30,9 +32,10 @@ export default function Button({
         ${VARIANTS[variant]}
         ${className}
       `}
+      {...rest}
     >
       {loading ? (
-        <span className="h-4 w-4 rounded-full border-2 border-current border-t-transparent animate-spin" />
+        <span className="h-4 w-4 rounded-full border-2 border-current border-t-transparent animate-spin" aria-hidden="true" />
       ) : null}
       {children}
     </button>

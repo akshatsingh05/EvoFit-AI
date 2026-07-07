@@ -1,6 +1,9 @@
 from datetime import date, datetime
 from pydantic import BaseModel
 
+from app.schemas.plan_info import PlanInfoSchema
+from app.schemas.history import HistoryListResponse  # noqa: F401 (re-exported for router convenience)
+
 
 class ExerciseSchema(BaseModel):
     name: str
@@ -25,6 +28,37 @@ class WorkoutPlanResponse(BaseModel):
     created_at: datetime
 
     model_config = {"from_attributes": True}
+
+
+class WorkoutWeekResponse(BaseModel):
+    """Response for week-navigation requests. `plan` is null for weeks before
+    the user registered, or in-between weeks the app is not allowed to generate."""
+
+    week_start_date: date
+    offset: int
+    is_before_registration: bool
+    plan: WorkoutPlanResponse | None = None
+    plan_info: PlanInfoSchema | None = None
+
+
+class CalendarWorkoutDetail(BaseModel):
+    focus: str | None = None
+    exercises: list[dict] = []
+    duration_minutes: int = 0
+    completion_status: str | None = None
+
+
+class CalendarDayResponse(BaseModel):
+    date: date
+    status: str  # completed | skipped | rest | upcoming | missed | no_plan
+    workout: CalendarWorkoutDetail | None = None
+
+
+class WorkoutCalendarResponse(BaseModel):
+    start_date: date
+    end_date: date
+    days: list[CalendarDayResponse]
+    streak: int
 
 
 class WorkoutCompletionRequest(BaseModel):

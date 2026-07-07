@@ -67,3 +67,20 @@ def build_adaptive_prompt(context: dict) -> str:
         "same, or increase, and give 2-4 short, specific coaching recommendations grounded in the "
         "data above. Return structured JSON only."
     )
+
+
+def build_coach_prompt(context: dict) -> str:
+    goals = context.get("goals") or {}
+
+    return (
+        "You are a personal AI fitness coach writing a single short, encouraging, non-repetitive "
+        f"message for today's dashboard. The client's primary goal is '{goals.get('primary_goal')}'. "
+        f"Latest recovery score: {context.get('recovery_score')}/100. "
+        f"Training consistency: {context.get('consistency_pct')}%. "
+        f"Fatigue flag: {context.get('fatigue_flag')}. "
+        f"Nutrition adherence (last 14 days): {context.get('nutrition_adherence_pct')}%. "
+        f"Current workout streak: {context.get('workout_streak_days')} days. "
+        f"Weight trend relative to goal: {context.get('weight_trend')}. "
+        "Prioritize acute recovery concerns first, then streak momentum, then adherence, then weight "
+        "trend, then a goal-appropriate general tip. Return one sentence, plain text only."
+    )

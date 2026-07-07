@@ -7,6 +7,7 @@ import Input from '../components/ui/Input.jsx'
 import Button from '../components/ui/Button.jsx'
 import ProgressChart from '../components/progress/ProgressChart.jsx'
 import * as progressService from '../services/progressService'
+import * as reportsService from '../services/reportsService'
 
 function todayIso() {
   return new Date().toISOString().slice(0, 10)
@@ -27,6 +28,9 @@ export default function Progress() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [logError, setLogError] = useState('')
+  const [reportPeriod, setReportPeriod] = useState('weekly')
+  const [report, setReport] = useState(null)
+  const [reportLoading, setReportLoading] = useState(true)
 
   const {
     register,
@@ -49,6 +53,22 @@ export default function Progress() {
   useEffect(() => {
     load()
   }, [])
+
+  useEffect(() => {
+    let cancelled = false
+    setReportLoading(true)
+    reportsService
+      .getReport(reportPeriod)
+      .then((result) => {
+        if (!cancelled) setReport(result)
+      })
+      .finally(() => {
+        if (!cancelled) setReportLoading(false)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [reportPeriod])
 
   const onLogWeight = async (values) => {
     setLogError('')
@@ -127,6 +147,58 @@ export default function Progress() {
             <p className="text-body-sm text-on-surface-variant mt-xs">Meals marked eaten over the last 14 days</p>
           </Card>
         </div>
+
+        <Card>
+          <div className="flex items-center justify-between mb-md">
+            <h3 className="text-label-lg font-display text-on-surface">Reports</h3>
+            <div className="flex rounded-full bg-surface-container p-xs" role="group" aria-label="Report period">
+              <button
+                className={`h-8 px-md rounded-full text-label-sm transition-colors ${reportPeriod === 'weekly' ? 'bg-primary text-on-primary' : 'text-on-surface-variant'}`}
+                aria-pressed={reportPeriod === 'weekly'}
+                onClick={() => setReportPeriod('weekly')}
+              >
+                Weekly
+              </button>
+              <button
+                className={`h-8 px-md rounded-full text-label-sm transition-colors ${reportPeriod === 'monthly' ? 'bg-primary text-on-primary' : 'text-on-surface-variant'}`}
+                aria-pressed={reportPeriod === 'monthly'}
+                onClick={() => setReportPeriod('monthly')}
+              >
+                Monthly
+              </button>
+            </div>
+          </div>
+
+          {reportLoading || !report ? (
+            <div className="flex justify-center py-lg">
+              <span className="h-6 w-6 rounded-full border-2 border-primary border-t-transparent animate-spin" aria-hidden="true" />
+            </div>
+          ) : (
+            <>
+              <p className="text-body-md text-on-surface mb-md">{report.ai_summary}</p>
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-md">
+                <div>
+                  <p className="text-body-sm text-on-surface-variant">Workouts done</p>
+                  <p className="text-headline-sm text-primary">{report.workouts_completed}</p>
+                </div>
+                <div>
+                  <p className="text-body-sm text-on-surface-variant">Frequency</p>
+                  <p className="text-headline-sm text-secondary">{report.workout_frequency_pct}%</p>
+                </div>
+                <div>
+                  <p className="text-body-sm text-on-surface-variant">Calories logged</p>
+                  <p className="text-headline-sm text-tertiary">{report.total_calories_logged}</p>
+                </div>
+                <div>
+                  <p className="text-body-sm text-on-surface-variant">Weight change</p>
+                  <p className="text-headline-sm text-on-surface">
+                    {report.weight_change_kg === null ? '—' : `${report.weight_change_kg > 0 ? '+' : ''}${report.weight_change_kg} kg`}
+                  </p>
+                </div>
+              </div>
+            </>
+          )}
+        </Card>
 
         <ProgressChart
           title="Weight history"

@@ -1,7 +1,7 @@
 import OnboardingLayout from '../../layouts/OnboardingLayout.jsx'
 import Card from '../../components/ui/Card.jsx'
 
-function SummaryRow({ label, value }) {
+export function SummaryRow({ label, value }) {
   if (value === undefined || value === null || value === '') return null
   return (
     <div className="flex justify-between py-sm border-b border-divider last:border-none">

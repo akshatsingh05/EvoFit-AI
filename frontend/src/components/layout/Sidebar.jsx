@@ -3,13 +3,13 @@ import { LayoutDashboard, Dumbbell, Salad, TrendingUp, ClipboardCheck, User, Set
 import logo from '../../assets/logo.png'
 
 const NAV_ITEMS = [
-  { to: '/dashboard', label: 'Dashboard', icon: LayoutDashboard, available: true },
-  { to: '/workout', label: 'Workout', icon: Dumbbell, available: true },
-  { to: '/nutrition', label: 'Nutrition', icon: Salad, available: true },
-  { to: '/checkin', label: 'Daily Check-In', icon: ClipboardCheck, available: true },
-  { to: '/progress', label: 'Progress', icon: TrendingUp, available: true },
-  { to: '/profile', label: 'Profile', icon: User, available: true },
-  { to: '/settings', label: 'Settings', icon: SettingsIcon, available: true },
+  { to: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
+  { to: '/workout', label: 'Workout', icon: Dumbbell },
+  { to: '/nutrition', label: 'Nutrition', icon: Salad },
+  { to: '/checkin', label: 'Daily Check-In', icon: ClipboardCheck },
+  { to: '/progress', label: 'Progress', icon: TrendingUp },
+  { to: '/profile', label: 'Profile', icon: User },
+  { to: '/settings', label: 'Settings', icon: SettingsIcon },
 ]
 
 export default function Sidebar({ open, onClose }) {
@@ -39,7 +39,7 @@ export default function Sidebar({ open, onClose }) {
         <nav className="flex-1 px-md py-lg space-y-xs">
           {NAV_ITEMS.map((item) => {
             const Icon = item.icon
-            return item.available ? (
+            return (
               <NavLink
                 key={item.to}
                 to={item.to}
@@ -49,21 +49,9 @@ export default function Sidebar({ open, onClose }) {
                   ${isActive ? 'bg-primary/10 text-primary' : 'text-on-surface-variant hover:bg-surface-container'}
                 `}
               >
-                <Icon size={18} aria-hidden />
+                <Icon size={18} aria-hidden="true" />
                 {item.label}
               </NavLink>
-            ) : (
-              <div
-                key={item.to}
-                className="flex items-center justify-between gap-md px-md h-11 rounded-md text-label-md font-body text-on-surface-variant/50 cursor-not-allowed"
-                title="Coming soon"
-              >
-                <span className="flex items-center gap-md">
-                  <Icon size={18} aria-hidden />
-                  {item.label}
-                </span>
-                <span className="text-label-sm bg-surface-container-high px-sm rounded-full">Soon</span>
-              </div>
             )
           })}
         </nav>

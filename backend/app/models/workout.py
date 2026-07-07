@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime, date, timezone
 
-from sqlalchemy import String, DateTime, Date, ForeignKey, JSON, UniqueConstraint
+from sqlalchemy import String, DateTime, Date, ForeignKey, JSON, UniqueConstraint, Index
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database.base import Base
@@ -17,6 +17,8 @@ class WorkoutPlan(Base):
     7 day objects (see workout_ai_service for the shape). Regenerating creates
     a new row rather than mutating history, so past weeks remain inspectable.
     """
+
+    __table_args__ = (Index("ix_workout_plans_user_week", "user_id", "week_start_date"),)
 
     __tablename__ = "workout_plans"
 

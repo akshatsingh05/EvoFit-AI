@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useForm } from 'react-hook-form'
-import { Link } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import AppLayout from '../layouts/AppLayout.jsx'
 import Card from '../components/ui/Card.jsx'
 import Input from '../components/ui/Input.jsx'
@@ -8,14 +8,25 @@ import Button from '../components/ui/Button.jsx'
 import Toggle from '../components/ui/Toggle.jsx'
 import OptionCard from '../components/ui/OptionCard.jsx'
 import * as settingsService from '../services/settingsService'
+import * as profileService from '../services/profileService'
 import { useAuth } from '../hooks/useAuth.js'
+import { useTheme } from '../context/ThemeContext.jsx'
+import { useToast } from '../context/ToastContext.jsx'
 
 export default function Settings() {
   const { user, logout } = useAuth()
+  const { theme, setTheme, syncFromUserSettings } = useTheme()
+  const { showToast } = useToast()
+  const navigate = useNavigate()
   const [settings, setSettings] = useState(null)
   const [loading, setLoading] = useState(true)
   const [savingPrefs, setSavingPrefs] = useState(false)
   const [prefsError, setPrefsError] = useState('')
+
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
+  const [deleteConfirmText, setDeleteConfirmText] = useState('')
+  const [deleting, setDeleting] = useState(false)
+  const [deleteError, setDeleteError] = useState('')
 
   const [passwordError, setPasswordError] = useState('')
   const [passwordSuccess, setPasswordSuccess] = useState('')
@@ -34,11 +45,13 @@ export default function Settings() {
       try {
         const data = await settingsService.getSettings()
         setSettings(data)
+        syncFromUserSettings(data.theme)
       } finally {
         setLoading(false)
       }
     }
     load()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   const patchSetting = async (patch) => {
@@ -52,6 +65,7 @@ export default function Settings() {
     } catch {
       setSettings(previous)
       setPrefsError('Could not save that change. Please try again.')
+      showToast('Could not save that change.', 'error')
     } finally {
       setSavingPrefs(false)
     }
@@ -67,8 +81,24 @@ export default function Settings() {
       })
       setPasswordSuccess('Password updated successfully.')
       resetPasswordForm()
+      showToast('Password updated.', 'success')
     } catch (err) {
       setPasswordError(err.response?.data?.detail || 'Could not change password.')
+      showToast(err.response?.data?.detail || 'Could not change password.', 'error')
+    }
+  }
+
+  const handleDeleteAccount = async () => {
+    setDeleting(true)
+    setDeleteError('')
+    try {
+      await profileService.deleteAccount()
+      logout()
+      navigate('/', { replace: true })
+    } catch (err) {
+      setDeleteError(err.response?.data?.detail || 'Could not delete your account. Please try again.')
+      showToast('Could not delete your account.', 'error')
+      setDeleting(false)
     }
   }
 
@@ -100,18 +130,23 @@ export default function Settings() {
           <div className="grid grid-cols-2 gap-sm max-w-[320px]">
             <OptionCard
               label="Light"
-              selected={settings.theme === 'light'}
-              onSelect={() => patchSetting({ theme: 'light' })}
+              selected={theme === 'light'}
+              onSelect={() => {
+                setTheme('light')
+                patchSetting({ theme: 'light' })
+              }}
             />
             <OptionCard
               label="Dark"
-              description="Coming soon"
-              selected={settings.theme === 'dark'}
-              onSelect={() => patchSetting({ theme: 'dark' })}
+              selected={theme === 'dark'}
+              onSelect={() => {
+                setTheme('dark')
+                patchSetting({ theme: 'dark' })
+              }}
             />
           </div>
           <p className="text-body-sm text-on-surface-variant mt-sm">
-            Your preference is saved now; dark mode styling itself ships in a later pass.
+            Applies instantly and stays set across refreshes, logout, and other devices.
           </p>
         </Card>
 
@@ -178,6 +213,53 @@ export default function Settings() {
           <h2 className="text-headline-sm text-on-surface mb-sm">Log out</h2>
           <p className="text-body-sm text-on-surface-variant mb-md">You'll need to log in again to access your account.</p>
           <Button variant="secondary" onClick={logout}>Log out</Button>
+        </Card>
+
+        <Card className="border-2 border-error">
+          <h2 className="text-headline-sm text-error mb-sm">Danger zone</h2>
+          <p className="text-body-sm text-on-surface-variant mb-md">
+            Deleting your account permanently removes your profile, medical history, workout and nutrition plans,
+            progress history, notifications, and check-ins. This cannot be undone.
+          </p>
+
+          {!showDeleteConfirm ? (
+            <Button variant="secondary" className="border-error text-error" onClick={() => setShowDeleteConfirm(true)}>
+              Delete account
+            </Button>
+          ) : (
+            <div className="space-y-md max-w-[420px]">
+              <p className="text-body-sm text-on-surface">
+                Type <span className="font-medium">DELETE</span> to confirm you want to permanently delete your account.
+              </p>
+              <Input
+                value={deleteConfirmText}
+                onChange={(e) => setDeleteConfirmText(e.target.value)}
+                placeholder="DELETE"
+              />
+              {deleteError ? <p className="text-body-sm text-error">{deleteError}</p> : null}
+              <div className="flex gap-sm">
+                <Button
+                  variant="primary"
+                  className="bg-error hover:bg-error"
+                  disabled={deleteConfirmText !== 'DELETE'}
+                  loading={deleting}
+                  onClick={handleDeleteAccount}
+                >
+                  Permanently delete my account
+                </Button>
+                <Button
+                  variant="ghost"
+                  onClick={() => {
+                    setShowDeleteConfirm(false)
+                    setDeleteConfirmText('')
+                    setDeleteError('')
+                  }}
+                >
+                  Cancel
+                </Button>
+              </div>
+            </div>
+          )}
         </Card>
       </div>
     </AppLayout>

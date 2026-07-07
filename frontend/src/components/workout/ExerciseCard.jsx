@@ -1,4 +1,6 @@
-export default function ExerciseCard({ exercise, index }) {
+import { memo } from 'react'
+
+function ExerciseCard({ exercise, index }) {
   return (
     <div className="flex items-start gap-md py-md border-b border-divider last:border-none">
       <span className="h-8 w-8 rounded-full bg-primary/10 text-primary flex items-center justify-center text-label-md font-display shrink-0">
@@ -16,3 +18,5 @@ export default function ExerciseCard({ exercise, index }) {
     </div>
   )
 }
+
+export default memo(ExerciseCard)

@@ -5,7 +5,13 @@ export async function getProfile() {
   return data
 }
 
-export async function updateProfile({ fullName }) {
-  const { data } = await api.put('/profile', { full_name: fullName })
+export async function updateProfile({ fullName, email }) {
+  const payload = { full_name: fullName }
+  if (email) payload.email = email
+  const { data } = await api.put('/profile', payload)
   return data
+}
+
+export async function deleteAccount() {
+  await api.delete('/profile/account')
 }

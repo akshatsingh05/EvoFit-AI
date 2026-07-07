@@ -6,6 +6,7 @@ from app.models.user import User
 from app.models.workout import WorkoutCompletion
 from app.models.nutrition import MealCompletion, NutritionPlan
 from app.models.progress import WeightLog
+from app.services import nutrition_service
 
 PERIOD_DAYS = {"weekly": 7, "monthly": 30}
 
@@ -69,7 +70,10 @@ def get_report(db: Session, user: User, period: str) -> dict:
             plan_cache[row.plan_id] = plan
         if plan is None:
             continue
-        meal = next((m for m in plan.meals if m["meal_type"] == row.meal_type), None)
+        day = nutrition_service.get_day_from_plan(plan, row.meal_date)
+        if day is None:
+            continue
+        meal = next((m for m in day["meals"] if m["meal_type"] == row.meal_type), None)
         if meal:
             total_calories += meal["calories"]
             total_protein += meal["protein_g"]
