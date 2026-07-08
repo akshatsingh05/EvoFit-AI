@@ -5,6 +5,7 @@ import AuthLayout from '../layouts/AuthLayout.jsx'
 import Input from '../components/ui/Input.jsx'
 import Button from '../components/ui/Button.jsx'
 import { useAuth } from '../hooks/useAuth.js'
+import { getErrorMessage } from '../utils/errorMessage.js'
 
 export default function Login() {
   const { login } = useAuth()
@@ -28,7 +29,7 @@ export default function Login() {
         navigate(user.has_completed_onboarding ? '/dashboard' : '/onboarding', { replace: true })
       }
     } catch (err) {
-      setServerError(err.response?.data?.detail || 'Something went wrong. Please try again.')
+      setServerError(getErrorMessage(err))
     }
   }
 

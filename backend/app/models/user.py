@@ -30,3 +30,10 @@ class User(Base):
     settings = relationship(
         "UserSettings", back_populates="user", uselist=False, cascade="all, delete-orphan"
     )
+    # No back_populates: RefreshToken doesn't need to navigate back to User
+    # anywhere in the codebase (it's looked up by token_hash directly). The
+    # DB-level ON DELETE CASCADE on RefreshToken.user_id already handles
+    # cleanup on PostgreSQL (FK enforcement is on by default there); this
+    # ORM-level cascade makes the same cleanup happen on SQLite too, where
+    # FK actions aren't enforced by default (see database/session.py).
+    refresh_tokens = relationship("RefreshToken", cascade="all, delete-orphan")

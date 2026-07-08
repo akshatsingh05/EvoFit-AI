@@ -12,6 +12,7 @@ import * as profileService from '../services/profileService'
 import { useAuth } from '../hooks/useAuth.js'
 import { useTheme } from '../context/ThemeContext.jsx'
 import { useToast } from '../context/ToastContext.jsx'
+import { getErrorMessage } from '../utils/errorMessage.js'
 
 export default function Settings() {
   const { user, logout } = useAuth()
@@ -83,8 +84,9 @@ export default function Settings() {
       resetPasswordForm()
       showToast('Password updated.', 'success')
     } catch (err) {
-      setPasswordError(err.response?.data?.detail || 'Could not change password.')
-      showToast(err.response?.data?.detail || 'Could not change password.', 'error')
+      const message = getErrorMessage(err, 'Could not change password.')
+      setPasswordError(message)
+      showToast(message, 'error')
     }
   }
 
@@ -96,7 +98,7 @@ export default function Settings() {
       logout()
       navigate('/', { replace: true })
     } catch (err) {
-      setDeleteError(err.response?.data?.detail || 'Could not delete your account. Please try again.')
+      setDeleteError(getErrorMessage(err, 'Could not delete your account. Please try again.'))
       showToast('Could not delete your account.', 'error')
       setDeleting(false)
     }
@@ -192,6 +194,8 @@ export default function Settings() {
               {...register('new_password', {
                 required: 'Required',
                 minLength: { value: 8, message: 'Must be at least 8 characters' },
+                validate: (v) =>
+                  (/[A-Za-z]/.test(v) && /\d/.test(v)) || 'Must contain at least one letter and one number',
               })}
             />
             <Input

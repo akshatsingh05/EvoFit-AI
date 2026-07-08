@@ -9,6 +9,7 @@ import OptionCard from '../components/ui/OptionCard.jsx'
 import ScaleSelector from '../components/checkin/ScaleSelector.jsx'
 import * as checkinService from '../services/checkinService'
 import * as adaptiveService from '../services/adaptiveService'
+import { getErrorMessage } from '../utils/errorMessage.js'
 
 const MOODS = [
   { value: 'great', label: 'Great' },
@@ -85,7 +86,7 @@ export default function DailyCheckIn() {
       setAnalyzing(true)
       await adaptiveService.generateInsight()
     } catch (err) {
-      setServerError(err.response?.data?.detail || 'Could not save your check-in. Please try again.')
+      setServerError(getErrorMessage(err, 'Could not save your check-in. Please try again.'))
     } finally {
       setAnalyzing(false)
     }

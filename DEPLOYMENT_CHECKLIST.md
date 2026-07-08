@@ -10,6 +10,7 @@
 - [ ] `TRUSTED_HOSTS` set to the real backend domain(s), not `*`
 - [ ] `VITE_API_BASE_URL` set to the real backend URL before building the frontend
 - [ ] Alembic migrations reviewed and applied (`alembic upgrade head`, or automatic via `startCommand`/Docker `CMD`)
+- [ ] Confirmed the app fails fast at startup (not lazily on first login) if migrations are missing — see `app/database/verify.py`
 - [ ] `/docs`, `/redoc`, `/openapi.json` confirmed disabled in production (`GET /docs` → 404)
 
 ## Auth & security

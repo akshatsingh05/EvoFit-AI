@@ -1,5 +1,7 @@
 from typing import Literal
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
+
+from app.core.security import validate_password_complexity
 
 
 class SettingsResponse(BaseModel):
@@ -21,6 +23,11 @@ class SettingsUpdateRequest(BaseModel):
 class ChangePasswordRequest(BaseModel):
     current_password: str
     new_password: str = Field(min_length=8, max_length=128)
+
+    @field_validator("new_password")
+    @classmethod
+    def _password_complexity(cls, value: str) -> str:
+        return validate_password_complexity(value)
 
 
 class MessageResponse(BaseModel):

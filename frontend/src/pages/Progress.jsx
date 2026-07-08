@@ -8,6 +8,7 @@ import Button from '../components/ui/Button.jsx'
 import ProgressChart from '../components/progress/ProgressChart.jsx'
 import * as progressService from '../services/progressService'
 import * as reportsService from '../services/reportsService'
+import { getErrorMessage } from '../utils/errorMessage.js'
 
 function todayIso() {
   return new Date().toISOString().slice(0, 10)
@@ -77,7 +78,7 @@ export default function Progress() {
       reset({ weight_kg: '' })
       await load()
     } catch (err) {
-      setLogError(err.response?.data?.detail || 'Could not save that weight entry.')
+      setLogError(getErrorMessage(err, 'Could not save that weight entry.'))
     }
   }
 

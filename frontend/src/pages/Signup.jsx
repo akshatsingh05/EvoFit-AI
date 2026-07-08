@@ -5,6 +5,7 @@ import AuthLayout from '../layouts/AuthLayout.jsx'
 import Input from '../components/ui/Input.jsx'
 import Button from '../components/ui/Button.jsx'
 import { useAuth } from '../hooks/useAuth.js'
+import { getErrorMessage } from '../utils/errorMessage.js'
 
 export default function Signup() {
   const { signup } = useAuth()
@@ -25,7 +26,7 @@ export default function Signup() {
       await signup({ fullName: values.fullName, email: values.email, password: values.password })
       navigate('/onboarding', { replace: true })
     } catch (err) {
-      setServerError(err.response?.data?.detail || 'Something went wrong. Please try again.')
+      setServerError(getErrorMessage(err))
     }
   }
 
@@ -53,6 +54,8 @@ export default function Signup() {
           {...register('password', {
             required: 'Password is required',
             minLength: { value: 8, message: 'Must be at least 8 characters' },
+            validate: (v) =>
+              (/[A-Za-z]/.test(v) && /\d/.test(v)) || 'Must contain at least one letter and one number',
           })}
         />
         <Input

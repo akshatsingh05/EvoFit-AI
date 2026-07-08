@@ -3,24 +3,65 @@ Password hashing and JWT token utilities.
 Kept isolated from business logic so services stay thin and testable.
 """
 import hashlib
+import re
 import secrets
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
+import bcrypt
 from jose import JWTError, jwt
-from passlib.context import CryptContext
 
 from app.core.config import settings
 
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+_PASSWORD_PATTERN = re.compile(r"^(?=.*[A-Za-z])(?=.*\d).+$")
+
+# bcrypt only uses the first 72 *bytes* of a password; anything beyond that
+# is silently ignored by the algorithm itself, but the `bcrypt` library
+# raises if you hand it more than 72 bytes rather than truncating for you.
+# Truncate ourselves (on a UTF-8 boundary) so hashing never raises for a
+# legitimately long-but-valid password (our schema already caps at 128
+# characters, which can exceed 72 *bytes* once multi-byte characters are
+# involved).
+_BCRYPT_MAX_BYTES = 72
+
+
+def _prepare_password_bytes(password: str) -> bytes:
+    encoded = password.encode("utf-8")
+    if len(encoded) <= _BCRYPT_MAX_BYTES:
+        return encoded
+    truncated = encoded[:_BCRYPT_MAX_BYTES]
+    # Avoid splitting a multi-byte UTF-8 character in half.
+    while truncated and (truncated[-1] & 0xC0) == 0x80:
+        truncated = truncated[:-1]
+    return truncated
+
+
+def validate_password_complexity(password: str) -> str:
+    """
+    Shared by every schema that accepts a new password (signup, change
+    password, and any future reset-password flow) so the rule can't drift
+    out of sync between them the way it did when only signup enforced it.
+    """
+    if not _PASSWORD_PATTERN.match(password):
+        raise ValueError("Password must contain at least one letter and one number")
+    return password
 
 
 def hash_password(password: str) -> str:
-    return pwd_context.hash(password)
+    # `bcrypt` (used directly, not through passlib -- see module docstring
+    # note in git history / AUDIT_REPORT.md for why) returns bytes; store as
+    # a plain str since that's what the `hashed_password` column expects.
+    hashed = bcrypt.hashpw(_prepare_password_bytes(password), bcrypt.gensalt())
+    return hashed.decode("utf-8")
 
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
-    return pwd_context.verify(plain_password, hashed_password)
+    try:
+        return bcrypt.checkpw(_prepare_password_bytes(plain_password), hashed_password.encode("utf-8"))
+    except ValueError:
+        # Malformed/foreign hash format (e.g. a row seeded outside the app).
+        # Treat as "does not match" rather than crashing the request.
+        return False
 
 
 def create_access_token(subject: str, expires_minutes: int | None = None) -> str:

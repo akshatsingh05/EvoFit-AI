@@ -1,8 +1,6 @@
-import re
-
 from pydantic import BaseModel, EmailStr, Field, field_validator
 
-_PASSWORD_PATTERN = re.compile(r"^(?=.*[A-Za-z])(?=.*\d).+$")
+from app.core.security import validate_password_complexity
 
 
 class SignupRequest(BaseModel):
@@ -13,9 +11,7 @@ class SignupRequest(BaseModel):
     @field_validator("password")
     @classmethod
     def _password_complexity(cls, value: str) -> str:
-        if not _PASSWORD_PATTERN.match(value):
-            raise ValueError("Password must contain at least one letter and one number")
-        return value
+        return validate_password_complexity(value)
 
 
 class LoginRequest(BaseModel):

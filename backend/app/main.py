@@ -10,6 +10,8 @@ from app.core.config import settings
 from app.core.logging import configure_logging
 from app.core.exceptions import register_exception_handlers
 from app.core.rate_limit import limiter
+from app.database.session import engine
+from app.database.verify import verify_database_schema
 from app.middleware.security_headers import SecurityHeadersMiddleware
 
 # Import models so they're registered on Base.metadata. create_all() is no
@@ -101,6 +103,10 @@ def on_startup() -> None:
         settings.DEBUG,
         "postgresql" if not settings.DATABASE_URL.startswith("sqlite") else "sqlite",
     )
+    # Fail fast and loudly if migrations haven't been applied, instead of
+    # letting the app "start successfully" and only discover missing tables
+    # when a real request (e.g. login) hits them. See app/database/verify.py.
+    verify_database_schema(engine)
 
 
 @app.get("/health")

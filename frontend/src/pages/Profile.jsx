@@ -9,6 +9,7 @@ import Chip from '../components/ui/Chip.jsx'
 import * as profileService from '../services/profileService'
 import { useAuth } from '../hooks/useAuth.js'
 import { useToast } from '../context/ToastContext.jsx'
+import { getErrorMessage } from '../utils/errorMessage.js'
 
 function InfoRow({ label, value }) {
   if (value === undefined || value === null || value === '') return null
@@ -63,7 +64,7 @@ export default function Profile() {
       setEditing(false)
       showToast('Profile updated.', 'success')
     } catch (err) {
-      setSaveError(err.response?.data?.detail || 'Could not save changes.')
+      setSaveError(getErrorMessage(err, 'Could not save changes.'))
       showToast('Could not save changes.', 'error')
     }
   }

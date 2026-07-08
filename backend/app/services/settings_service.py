@@ -4,6 +4,7 @@ from sqlalchemy.orm import Session
 from app.core.security import verify_password, hash_password
 from app.models.user import User
 from app.models.user_settings import UserSettings
+from app.models.refresh_token import RefreshToken
 from app.schemas.settings import SettingsUpdateRequest, ChangePasswordRequest
 
 
@@ -43,4 +44,14 @@ def change_password(db: Session, user: User, payload: ChangePasswordRequest) -> 
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Current password is incorrect")
 
     user.hashed_password = hash_password(payload.new_password)
+
+    # A stolen refresh token must stop working the moment the legitimate
+    # user changes their password -- otherwise an attacker holding one keeps
+    # minting fresh access tokens indefinitely regardless of the password
+    # change. This revokes every session; the user (and anyone else with a
+    # copy of a refresh token) will need to log in again everywhere.
+    db.query(RefreshToken).filter(
+        RefreshToken.user_id == user.id, RefreshToken.revoked.is_(False)
+    ).update({"revoked": True})
+
     db.commit()
