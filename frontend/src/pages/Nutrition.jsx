@@ -8,6 +8,7 @@ import PlanInfoCard from '../components/shared/PlanInfoCard.jsx'
 import WeekNavigator from '../components/shared/WeekNavigator.jsx'
 import HistoryList from '../components/shared/HistoryList.jsx'
 import * as nutritionService from '../services/nutritionService'
+import { replaceMeal } from '../services/nutritionPreferencesService'
 import { todayIso, mondayOfWeek, weeksBetween } from '../utils/dateUtils.js'
 import { useToast } from '../context/ToastContext.jsx'
 
@@ -33,6 +34,7 @@ export default function Nutrition() {
   const [selectedIndex, setSelectedIndex] = useState(0)
   const [regenerating, setRegenerating] = useState(false)
   const [savingMeal, setSavingMeal] = useState(null)
+  const [replacingMealType, setReplacingMealType] = useState(null)
 
   const loadWeek = async (weekOffset) => {
     setLoading(true)
@@ -113,6 +115,24 @@ export default function Nutrition() {
     const targetOffset = weeksBetween(mondayOfWeek(todayIso()), weekStartDate)
     setOffset(targetOffset)
     setShowHistory(false)
+  }
+
+  const handleReplaceMeal = async (mealType, replacementName) => {
+    setReplacingMealType(mealType)
+    try {
+      const weekResp = await replaceMeal({
+        offset,
+        dayIndex: selectedIndex,
+        mealType,
+        replacementName,
+      })
+      setWeekData(weekResp)
+      showToast('Meal replaced.', 'success')
+    } catch {
+      showToast('Could not replace that meal. Try a different one.', 'error')
+    } finally {
+      setReplacingMealType(null)
+    }
   }
 
   if (error) {
@@ -223,6 +243,8 @@ export default function Nutrition() {
                         status={selectedDayCompletions[meal.meal_type]}
                         saving={savingMeal === meal.meal_type}
                         onSetStatus={(status) => handleSetStatus(meal.meal_type, status)}
+                        onReplace={(replacementName) => handleReplaceMeal(meal.meal_type, replacementName)}
+                        replacing={replacingMealType === meal.meal_type}
                       />
                     ))}
                   </Card>

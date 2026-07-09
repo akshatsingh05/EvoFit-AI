@@ -3,10 +3,12 @@ import uuid
 
 from sqlalchemy.orm import Session
 
+from app.data.exercise_library import exercises_for, find_exercise_by_name
 from app.models.user import User
 from app.models.workout import WorkoutPlan, WorkoutCompletion
 from app.models.adaptive_insight import AdaptiveInsight
 from app.services import onboarding_service, medical_history_service, notification_service, week_utils
+from app.services import workout_preferences_service
 from app.services.ai.workout_ai_service import generate_workout_schedule
 
 
@@ -33,6 +35,26 @@ def _exercise_names_in_plan(plan: WorkoutPlan | None) -> list[str]:
     return [ex["name"] for day in plan.schedule for ex in day.get("exercises", [])]
 
 
+def _preferences_context(db: Session, user: User) -> dict:
+    """Sprint 4: shapes WorkoutPreferences into the plain-dict context the
+    generator expects, including the reduced (dominant-only) replacement
+    memory — see workout_preferences_service.dominant_replacements."""
+    prefs = workout_preferences_service.get_or_create_preferences(db, user)
+    return {
+        "workout_style": prefs.workout_style,
+        "workout_location": prefs.workout_location,
+        "equipment_available": prefs.equipment_available or [],
+        "preferred_duration_minutes": prefs.preferred_duration_minutes,
+        "workout_intensity": prefs.workout_intensity,
+        "preferred_workout_time": prefs.preferred_workout_time,
+        "favorite_muscle_groups": prefs.favorite_muscle_groups or [],
+        "liked_exercises": prefs.liked_exercises or [],
+        "disliked_exercises": prefs.disliked_exercises or [],
+        "avoid_movements": prefs.avoid_movements or [],
+        "dominant_replacements": workout_preferences_service.dominant_replacements(prefs.exercise_replacement_memory),
+    }
+
+
 def _build_context(db: Session, user: User, variation_seed: str, avoid_exercise_names: list[str]) -> dict:
     onboarding = onboarding_service.get_onboarding(db, user)
     medical = medical_history_service.get_medical_history(db, user)
@@ -45,6 +67,7 @@ def _build_context(db: Session, user: User, variation_seed: str, avoid_exercise_
             "conditions": (medical.conditions if medical else []) or [],
             "cleared_for_exercise": medical.cleared_for_exercise if medical else True,
         },
+        "preferences": _preferences_context(db, user),
         "intensity_modifier": _latest_intensity_modifier(db, user),
         "variation_seed": variation_seed,
         "avoid_exercise_names": avoid_exercise_names,
@@ -343,3 +366,101 @@ def get_history(db: Session, user: User, limit: int = 60) -> list[WorkoutComplet
 
 def get_current_plan_if_exists(db: Session, user: User) -> WorkoutPlan | None:
     return _latest_plan_for_week(db, user, _week_start(date.today()))
+
+
+# --- Sprint 4: Plan Customization (objective 4) + Preference Memory (objective 5) ---
+
+
+def get_exercise_alternatives(db: Session, user: User, plan: WorkoutPlan, day_index: int, exercise_index: int) -> list[str]:
+    """
+    Alternatives for the "Replace Exercise" flow: other exercises matching
+    the same day's focus, honoring the user's current equipment/injury/
+    dislike constraints, excluding exercises already scheduled that day so a
+    replacement never duplicates a sibling exercise.
+    """
+    if day_index < 0 or day_index >= len(plan.schedule):
+        raise ValueError("day_index out of range")
+    day = plan.schedule[day_index]
+    if exercise_index < 0 or exercise_index >= len(day.get("exercises", [])):
+        raise ValueError("exercise_index out of range")
+
+    context = (plan.generation_basis or {}).get("context", {})
+    medical = context.get("medical") or {}
+    fitness = context.get("fitness_experience") or {}
+    preferences = context.get("preferences") or {}
+
+    from app.services.ai.workout_generator import (
+        _equipment_tags_from_preferences,
+        _parse_avoid_movements,
+        _pool_with_fallback,
+    )
+
+    injuries = set(medical.get("injuries") or [])
+    avoid_injury_tags, avoid_name_keywords = _parse_avoid_movements(preferences.get("avoid_movements") or [])
+    conditions = set(medical.get("conditions") or [])
+    equipment_tags = _equipment_tags_from_preferences(preferences.get("equipment_available") or [])
+    disliked = set(preferences.get("disliked_exercises") or [])
+    already_in_day = {ex["name"] for ex in day["exercises"]}
+    equipment_access = fitness.get("equipment_access", "none")
+
+    pool = _pool_with_fallback(
+        day["focus"], equipment_access, injuries, avoid_injury_tags, conditions, False,
+        equipment_tags, disliked | already_in_day, avoid_name_keywords,
+    )
+    if not pool and day["focus"] != "full_body":
+        pool = _pool_with_fallback(
+            "full_body", equipment_access, injuries, avoid_injury_tags, conditions, False,
+            equipment_tags, disliked | already_in_day, avoid_name_keywords,
+        )
+    return [ex["name"] for ex in pool]
+
+
+def replace_exercise_in_plan(
+    db: Session, user: User, plan: WorkoutPlan, day_index: int, exercise_index: int, replacement_name: str | None
+) -> WorkoutPlan:
+    """
+    Sprint 4 objective 4: swaps a single exercise in place, preserving the
+    day's overall structure (sets/reps/rest, position, sibling exercises).
+    If `replacement_name` isn't provided, one is picked at random from the
+    valid alternatives ("Swap Exercise"). Also records the replacement in
+    Workout Preferences (objective 5) so a repeated choice gets favored
+    automatically in future generations.
+    """
+    if day_index < 0 or day_index >= len(plan.schedule):
+        raise ValueError("day_index out of range")
+    day = plan.schedule[day_index]
+    if exercise_index < 0 or exercise_index >= len(day.get("exercises", [])):
+        raise ValueError("exercise_index out of range")
+    original = day["exercises"][exercise_index]
+
+    alternatives = get_exercise_alternatives(db, user, plan, day_index, exercise_index)
+    if not alternatives:
+        raise ValueError("No valid alternative exercises are available for this slot")
+
+    if replacement_name is None:
+        import random
+        replacement_name = random.choice(alternatives)
+    elif replacement_name not in alternatives:
+        raise ValueError("That exercise isn't a valid alternative for this slot")
+
+    replacement_exercise = find_exercise_by_name(replacement_name)
+    if replacement_exercise is None:
+        raise ValueError("Unknown exercise")
+
+    new_schedule = [dict(d) for d in plan.schedule]
+    new_exercises = list(new_schedule[day_index]["exercises"])
+    new_exercises[exercise_index] = {
+        "name": replacement_exercise["name"],
+        "sets": original["sets"],
+        "reps": original["reps"],
+        "rest_seconds": original["rest_seconds"],
+        "instructions": replacement_exercise["instructions"],
+    }
+    new_schedule[day_index] = {**new_schedule[day_index], "exercises": new_exercises}
+    plan.schedule = new_schedule
+    db.commit()
+    db.refresh(plan)
+
+    workout_preferences_service.record_exercise_replacement(db, user, original["name"], replacement_exercise["name"])
+
+    return plan

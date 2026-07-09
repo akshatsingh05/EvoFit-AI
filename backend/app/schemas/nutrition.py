@@ -1,5 +1,5 @@
 from datetime import date, datetime
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from app.schemas.plan_info import PlanInfoSchema
 from app.schemas.history import HistoryListResponse  # noqa: F401 (re-exported for router convenience)
@@ -70,3 +70,14 @@ class MealCompletionResponse(BaseModel):
     status: str
 
     model_config = {"from_attributes": True}
+
+
+class MealAlternativesResponse(BaseModel):
+    alternatives: list[str]
+
+
+class ReplaceMealRequest(BaseModel):
+    offset: int = 0
+    day_index: int = Field(ge=0, le=6)
+    meal_type: str
+    replacement_name: str | None = None  # None = auto "Swap"

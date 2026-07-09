@@ -193,6 +193,32 @@ export default function Profile() {
 
         <Card>
           <div className="flex items-center justify-between mb-md">
+            <h2 className="text-headline-sm text-on-surface">Workout preferences</h2>
+            <Button variant="ghost" className="h-9 px-md" onClick={() => navigate('/preferences/workout')}>
+              Edit
+            </Button>
+          </div>
+          <p className="text-body-sm text-on-surface-variant">
+            Set your preferred style, equipment, duration, and exercises you like or want to avoid — every
+            generated workout uses these.
+          </p>
+        </Card>
+
+        <Card>
+          <div className="flex items-center justify-between mb-md">
+            <h2 className="text-headline-sm text-on-surface">Nutrition preferences</h2>
+            <Button variant="ghost" className="h-9 px-md" onClick={() => navigate('/preferences/nutrition')}>
+              Edit
+            </Button>
+          </div>
+          <p className="text-body-sm text-on-surface-variant">
+            Set your diet type, cuisine, budget, meal count, and favorite or disliked foods — every generated
+            meal plan uses these.
+          </p>
+        </Card>
+
+        <Card>
+          <div className="flex items-center justify-between mb-md">
             <h2 className="text-headline-sm text-on-surface">Medical history</h2>
             <Button variant="ghost" className="h-9 px-md" onClick={() => navigate('/profile/edit/medical-history')}>
               Edit

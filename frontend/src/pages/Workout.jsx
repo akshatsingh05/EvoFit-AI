@@ -9,6 +9,7 @@ import PlanInfoCard from '../components/shared/PlanInfoCard.jsx'
 import WeekNavigator from '../components/shared/WeekNavigator.jsx'
 import HistoryList from '../components/shared/HistoryList.jsx'
 import * as workoutService from '../services/workoutService'
+import { replaceExercise } from '../services/workoutPreferencesService'
 import { addDays, todayIso, mondayOfWeek, weeksBetween } from '../utils/dateUtils.js'
 import { useToast } from '../context/ToastContext.jsx'
 
@@ -26,6 +27,7 @@ export default function Workout() {
   const [selectedIndex, setSelectedIndex] = useState(0)
   const [regenerating, setRegenerating] = useState(false)
   const [savingStatus, setSavingStatus] = useState(false)
+  const [replacingIndex, setReplacingIndex] = useState(null)
 
   const loadWeek = async (weekOffset) => {
     setLoading(true)
@@ -100,6 +102,24 @@ export default function Workout() {
     setOffset(targetOffset)
     setShowHistory(false)
     setView('weekly')
+  }
+
+  const handleReplaceExercise = async (exerciseIndex, replacementName) => {
+    setReplacingIndex(exerciseIndex)
+    try {
+      const weekResp = await replaceExercise({
+        offset,
+        dayIndex: selectedIndex,
+        exerciseIndex,
+        replacementName,
+      })
+      setWeekData(weekResp)
+      showToast('Exercise replaced.', 'success')
+    } catch {
+      showToast('Could not replace that exercise. Try a different one.', 'error')
+    } finally {
+      setReplacingIndex(null)
+    }
   }
 
   if (error) {
@@ -215,7 +235,13 @@ export default function Workout() {
                     <>
                       <div>
                         {selectedDay.exercises.map((ex, i) => (
-                          <ExerciseCard key={ex.name + i} exercise={ex} index={i} />
+                          <ExerciseCard
+                            key={ex.name + i}
+                            exercise={ex}
+                            index={i}
+                            onReplace={(replacementName) => handleReplaceExercise(i, replacementName)}
+                            replacing={replacingIndex === i}
+                          />
                         ))}
                       </div>
 

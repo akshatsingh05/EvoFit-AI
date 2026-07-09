@@ -8,6 +8,8 @@ from app.models.notification import Notification
 from app.models.daily_checkin import DailyCheckIn
 from app.models.adaptive_insight import AdaptiveInsight
 from app.models.progress import WeightLog
+from app.models.workout_preferences import WorkoutPreferences
+from app.models.nutrition_preferences import NutritionPreferences
 from app.schemas.profile import ProfileResponse, ProfileUpdateRequest
 from app.services import onboarding_service, medical_history_service, notification_service
 
@@ -25,6 +27,8 @@ USER_OWNED_MODELS = [
     DailyCheckIn,
     AdaptiveInsight,
     WeightLog,
+    WorkoutPreferences,
+    NutritionPreferences,
 ]
 
 

@@ -45,6 +45,9 @@ def build_adaptive_analysis(context: dict) -> dict:
     nutrition_adherence_pct = context.get("nutrition_adherence_pct")
     workout_streak_days = context.get("workout_streak_days", 0)
     variety_seed = context.get("variety_seed", 0)
+    preferences = context.get("preferences") or {}
+    recent_avg_water_ml = context.get("recent_avg_water_ml")
+    water_goal_ml = context.get("water_goal_ml")
 
     recommendations: list[str] = []
 
@@ -151,6 +154,21 @@ def build_adaptive_analysis(context: dict) -> dict:
 
     if medical.get("injuries"):
         recommendations.append(f"Exercises continue to avoid loading: {', '.join(medical['injuries'])}.")
+
+    # --- Sprint 4: preference-aware "Today's AI Recommendation" tips ---
+    if recent_avg_water_ml is not None and water_goal_ml:
+        shortfall_ml = water_goal_ml - recent_avg_water_ml
+        if shortfall_ml >= 250:
+            rounded_shortfall = int(round(shortfall_ml / 250) * 250)
+            recommendations.append(f"You're averaging below your water goal — drink {rounded_shortfall} ml more today.")
+
+    if checkins:
+        avg_soreness_tip = _avg([c["muscle_soreness"] for c in checkins])
+        if avg_soreness_tip is not None and 3 <= avg_soreness_tip < 4:
+            recommendations.append("Stretch after today's workout to help with lingering muscle soreness.")
+
+    if fatigue_flag and preferences.get("workout_intensity") == "high":
+        recommendations.append("Your preferred intensity is High, but recovery signals suggest reducing intensity tomorrow.")
 
     if not recommendations:
         recommendations.append("Everything looks on track — keep following your current plan.")

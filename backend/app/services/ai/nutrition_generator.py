@@ -10,10 +10,32 @@ filtered pool, so every user with the same diet type got identical meals.
 Selection is now seeded per-user/per-regeneration (same pattern as the
 workout generator) and avoids repeating the immediately previous plan's
 meals when alternatives exist.
+
+Sprint 4 (Personalization Engine) changes — all optional, falling back to
+Sprint 1-3 behavior until the user sets a Nutrition Preference:
+- `diet_type` from Nutrition Preferences (vegetarian/vegan/eggetarian/
+  non_vegetarian) overrides the onboarding diet_type when set.
+- `cuisine_preference`, `budget`, `cooking_time_preference` are soft sort
+  preferences applied via meal_library.meals_for.
+- `favorite_foods` / `preferred_snacks` are boosted to the front of
+  selection; `disliked_foods` and preference `allergies` are hard-excluded
+  in addition to medical allergies.
+- `meals_per_day` (3-6) changes the day's meal structure via
+  MEAL_STRUCTURE_BY_COUNT instead of always generating the fixed 4-meal day.
+- `water_goal_ml`, when set, overrides the weight-derived default.
+- `meal_replacement_memory` (Sprint 4 objective 5): a meal replaced with the
+  same alternative 2+ times is substituted automatically going forward.
 """
 import random
 
-from app.data.meal_library import meals_for, MEAL_CALORIE_SHARE
+from app.data.meal_library import (
+    meals_for,
+    MEAL_STRUCTURE_BY_COUNT,
+    MEAL_CALORIE_SHARE,
+    pool_key_for_slot,
+    find_meal_by_name,
+    PREFERENCE_DIET_TYPE_MAP,
+)
 
 ACTIVITY_MULTIPLIERS = {
     "sedentary": 1.2,
@@ -42,11 +64,15 @@ COMMON_ALLERGENS = ["nuts", "dairy", "gluten", "shellfish", "fish", "eggs", "soy
 GLUCOSE_SENSITIVE_CONDITIONS = {"diabetes_type_1", "diabetes_type_2"}
 
 
-def _parse_allergens(allergy_text: str | None) -> set[str]:
-    if not allergy_text:
-        return set()
-    text = allergy_text.lower()
-    return {a for a in COMMON_ALLERGENS if a in text}
+def _parse_allergens(allergy_text: str | None, preference_allergies: list | None = None) -> set:
+    allergens = set()
+    if allergy_text:
+        text = allergy_text.lower()
+        allergens |= {a for a in COMMON_ALLERGENS if a in text}
+    for entry in preference_allergies or []:
+        low = entry.lower()
+        allergens |= {a for a in COMMON_ALLERGENS if a in low}
+    return allergens
 
 
 def _bmr(weight_kg: float, height_cm: float, age: int, sex: str) -> float:
@@ -77,13 +103,30 @@ def _scale_meal(meal: dict, target_calories: float) -> dict:
     }
 
 
-def _pick_meal(pool: list, rng: random.Random, avoid_names: set) -> dict | None:
+def _pick_meal(pool: list, rng: random.Random, avoid_names: set, boosted_names: set) -> dict | None:
     if not pool:
         return None
     shuffled = pool[:]
     rng.shuffle(shuffled)
+    if boosted_names:
+        shuffled.sort(key=lambda m: 0 if m["name"] in boosted_names else 1)
     fresh = [m for m in shuffled if m["name"] not in avoid_names]
     return (fresh or shuffled)[0]
+
+
+def _apply_replacement_memory(meal: dict, meal_slot: str, dominant_map: dict, diet_type: str, exclude_allergens: set) -> dict:
+    """Sprint 4 objective 5: substitutes a repeatedly-chosen replacement, if it's
+    still valid for the current diet type and allergen exclusions."""
+    if not dominant_map or meal is None:
+        return meal
+    replacement_name = dominant_map.get(meal["name"])
+    if not replacement_name:
+        return meal
+    replacement = find_meal_by_name(replacement_name)
+    if replacement is None:
+        return meal
+    is_compatible = diet_type in replacement["diet_types"] and not (set(replacement["allergens"]) & exclude_allergens)
+    return replacement if is_compatible else meal
 
 
 def build_nutrition_plan(context: dict) -> dict:
@@ -91,6 +134,7 @@ def build_nutrition_plan(context: dict) -> dict:
     goals = context.get("goals") or {}
     lifestyle = context.get("lifestyle_diet") or {}
     medical = context.get("medical") or {}
+    preferences = context.get("preferences") or {}
     variation_seed = context.get("variation_seed", "default")
     avoid_meal_names = set(context.get("avoid_meal_names") or [])
 
@@ -100,7 +144,14 @@ def build_nutrition_plan(context: dict) -> dict:
     sex = body.get("sex", "other")
     primary_goal = goals.get("primary_goal", "general_health")
     activity_level = lifestyle.get("occupation_activity", "sedentary")
-    diet_type = lifestyle.get("diet_type", "omnivore")
+
+    # Sprint 4: a Nutrition Preferences diet_type, when set, overrides the
+    # onboarding diet_type — see PREFERENCE_DIET_TYPE_MAP for how the
+    # preference vocabulary (vegetarian/vegan/eggetarian/non_vegetarian) maps
+    # onto this library's tags (omnivore/vegetarian/vegan/pescatarian/keto).
+    preference_diet_type = preferences.get("diet_type")
+    diet_type = PREFERENCE_DIET_TYPE_MAP.get(preference_diet_type, lifestyle.get("diet_type", "omnivore"))
+
     conditions = set(medical.get("conditions") or [])
 
     bmi = _calculate_bmi(weight_kg, height_cm)
@@ -125,26 +176,44 @@ def build_nutrition_plan(context: dict) -> dict:
     remaining_calories = max(target_calories - protein_calories - fat_calories, 0)
     target_carbs_g = round(remaining_calories / 4)
 
-    water_goal_ml = round(weight_kg * 35)
+    # Sprint 4: an explicit Nutrition Preferences water goal overrides the
+    # weight-derived default when the user has set one.
+    water_goal_ml = preferences.get("water_goal_ml") or round(weight_kg * 35)
 
-    exclude_allergens = _parse_allergens(medical.get("allergies"))
+    exclude_allergens = _parse_allergens(medical.get("allergies"), preferences.get("allergies"))
     prefer_low_glycemic = bool(conditions & GLUCOSE_SENSITIVE_CONDITIONS)
+
+    cuisine_preference = preferences.get("cuisine_preference")
+    budget = preferences.get("budget")
+    cooking_time_preference = preferences.get("cooking_time_preference")
+    disliked_foods = set(preferences.get("disliked_foods") or [])
+    boosted_names = set(preferences.get("favorite_foods") or []) | set(preferences.get("preferred_snacks") or [])
+    dominant_replacements = preferences.get("dominant_replacements") or {}
+
+    meals_per_day = preferences.get("meals_per_day") or lifestyle.get("meals_per_day") or 4
+    meal_structure = MEAL_STRUCTURE_BY_COUNT.get(meals_per_day, list(MEAL_CALORIE_SHARE.items()))
 
     rng = random.Random(f"{variation_seed}:nutrition")
 
     meals = []
-    for meal_type, share in MEAL_CALORIE_SHARE.items():
-        pool = meals_for(meal_type, diet_type, exclude_allergens, prefer_low_glycemic)
+    for meal_slot, share in meal_structure:
+        pool_key = pool_key_for_slot(meal_slot)
+        pool = meals_for(
+            pool_key, diet_type, exclude_allergens, prefer_low_glycemic,
+            cuisine_preference=cuisine_preference, budget=budget,
+            cooking_time_preference=cooking_time_preference, exclude_names=disliked_foods,
+        )
         if not pool:
-            pool = meals_for(meal_type, "omnivore", exclude_allergens, prefer_low_glycemic) or meals_for(
-                meal_type, "omnivore", set(), prefer_low_glycemic
+            pool = meals_for(pool_key, "omnivore", exclude_allergens, prefer_low_glycemic, exclude_names=disliked_foods) or meals_for(
+                pool_key, "omnivore", set(), prefer_low_glycemic, exclude_names=disliked_foods
             )
-        chosen = _pick_meal(pool, rng, avoid_meal_names)
+        chosen = _pick_meal(pool, rng, avoid_meal_names, boosted_names)
+        chosen = _apply_replacement_memory(chosen, meal_slot, dominant_replacements, diet_type, exclude_allergens)
         if chosen is None:
             continue
         meal_target_calories = target_calories * share
         scaled = _scale_meal(chosen, meal_target_calories)
-        scaled["meal_type"] = meal_type
+        scaled["meal_type"] = meal_slot
         meals.append(scaled)
 
     return {

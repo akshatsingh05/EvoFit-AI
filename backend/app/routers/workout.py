@@ -12,6 +12,8 @@ from app.schemas.workout import (
     WorkoutCalendarResponse,
     WorkoutCompletionRequest,
     WorkoutCompletionResponse,
+    ExerciseAlternativesResponse,
+    ReplaceExerciseRequest,
 )
 from app.schemas.history import HistoryListResponse
 from app.services import workout_service
@@ -120,3 +122,51 @@ def save_completion(
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
     return WorkoutCompletionResponse.model_validate(record)
+
+
+# --- Sprint 4: Plan Customization ---
+
+
+@router.get("/week/exercise-alternatives", response_model=ExerciseAlternativesResponse)
+def get_exercise_alternatives(
+    day_index: int,
+    exercise_index: int,
+    offset: int = 0,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    week_start_date = workout_service.week_start_for_offset(offset)
+    plan = workout_service.get_plan_for_week(db, current_user, week_start_date)
+    if plan is None:
+        raise HTTPException(status_code=404, detail="No plan exists for that week")
+    try:
+        alternatives = workout_service.get_exercise_alternatives(db, current_user, plan, day_index, exercise_index)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    return ExerciseAlternativesResponse(alternatives=alternatives)
+
+
+@router.post("/week/replace-exercise", response_model=WorkoutWeekResponse)
+def replace_exercise(
+    payload: ReplaceExerciseRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    week_start_date = workout_service.week_start_for_offset(payload.offset)
+    plan = workout_service.get_plan_for_week(db, current_user, week_start_date)
+    if plan is None:
+        raise HTTPException(status_code=404, detail="No plan exists for that week")
+    try:
+        plan = workout_service.replace_exercise_in_plan(
+            db, current_user, plan, payload.day_index, payload.exercise_index, payload.replacement_name
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+    return WorkoutWeekResponse(
+        week_start_date=week_start_date,
+        offset=payload.offset,
+        is_before_registration=False,
+        plan=WorkoutPlanResponse.model_validate(plan),
+        plan_info=workout_service.build_plan_info(db, current_user, plan),
+    )

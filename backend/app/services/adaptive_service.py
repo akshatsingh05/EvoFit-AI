@@ -13,6 +13,8 @@ from app.services import (
     workout_service,
     nutrition_service,
     notification_service,
+    workout_preferences_service,
+    nutrition_preferences_service,
 )
 from app.services.ai.adaptive_ai_service import generate_adaptive_analysis
 from app.services.ai.adaptive_engine import compute_weight_trend
@@ -61,6 +63,7 @@ def _build_context(db: Session, user: User) -> dict:
             "muscle_soreness": c.muscle_soreness,
             "pain_level": c.pain_level,
             "mood": c.mood,
+            "water_intake_ml": c.water_intake_ml,
         }
         for c in daily_checkin_service.get_recent_checkins(db, user, days=7)
     ]
@@ -75,6 +78,17 @@ def _build_context(db: Session, user: User) -> dict:
     nutrition_adherence_pct = _get_nutrition_adherence_pct(db, user)
     workout_streak_days = workout_service.compute_workout_streak(db, user)
 
+    water_values = [c["water_intake_ml"] for c in recent_checkins if c["water_intake_ml"] is not None]
+    recent_avg_water_ml = round(sum(water_values) / len(water_values)) if water_values else None
+
+    nutrition_prefs = nutrition_preferences_service.get_or_create_preferences(db, user)
+    body_metrics = onboarding.body_metrics or {}
+    water_goal_ml = nutrition_prefs.water_goal_ml or (
+        round(body_metrics["weight_kg"] * 35) if body_metrics.get("weight_kg") else None
+    )
+
+    workout_prefs = workout_preferences_service.get_or_create_preferences(db, user)
+
     return {
         "goals": onboarding.goals,
         "medical": {
@@ -88,6 +102,9 @@ def _build_context(db: Session, user: User) -> dict:
         "nutrition_adherence_pct": nutrition_adherence_pct,
         "workout_streak_days": workout_streak_days,
         "variety_seed": date.today().toordinal(),
+        "preferences": {"workout_intensity": workout_prefs.workout_intensity},
+        "recent_avg_water_ml": recent_avg_water_ml,
+        "water_goal_ml": water_goal_ml,
     }
 
 

@@ -4,10 +4,12 @@ import uuid
 
 from sqlalchemy.orm import Session
 
+from app.data.meal_library import meals_for, find_meal_by_name, pool_key_for_slot, PREFERENCE_DIET_TYPE_MAP
 from app.models.user import User
 from app.models.nutrition import NutritionPlan, MealCompletion
 from app.models.adaptive_insight import AdaptiveInsight
 from app.services import onboarding_service, medical_history_service, notification_service, week_utils
+from app.services import nutrition_preferences_service
 from app.services.ai.nutrition_ai_service import generate_nutrition_targets
 
 DAY_NAMES = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
@@ -72,6 +74,25 @@ def get_day_from_plan(plan: NutritionPlan | None, target_date: date) -> dict | N
     return next((d for d in plan.days if d.get("date") == target_iso), None)
 
 
+def _preferences_context(db: Session, user: User) -> dict:
+    """Sprint 4: shapes NutritionPreferences into the plain-dict context the
+    generator expects, including reduced (dominant-only) replacement memory."""
+    prefs = nutrition_preferences_service.get_or_create_preferences(db, user)
+    return {
+        "diet_type": prefs.diet_type,
+        "cuisine_preference": prefs.cuisine_preference,
+        "budget": prefs.budget,
+        "meals_per_day": prefs.meals_per_day,
+        "favorite_foods": prefs.favorite_foods or [],
+        "disliked_foods": prefs.disliked_foods or [],
+        "allergies": prefs.allergies or [],
+        "water_goal_ml": prefs.water_goal_ml,
+        "preferred_snacks": prefs.preferred_snacks or [],
+        "cooking_time_preference": prefs.cooking_time_preference,
+        "dominant_replacements": nutrition_preferences_service.dominant_replacements(prefs.meal_replacement_memory),
+    }
+
+
 def _build_base_context(db: Session, user: User) -> dict:
     onboarding = onboarding_service.get_onboarding(db, user)
     medical = medical_history_service.get_medical_history(db, user)
@@ -84,6 +105,7 @@ def _build_base_context(db: Session, user: User) -> dict:
             "allergies": medical.allergies if medical else None,
             "conditions": (medical.conditions if medical else []) or [],
         },
+        "preferences": _preferences_context(db, user),
     }
 
 
@@ -344,3 +366,96 @@ def get_history(db: Session, user: User, limit: int = 60) -> list[MealCompletion
         .limit(limit)
         .all()
     )
+
+
+# --- Sprint 4: Plan Customization (objective 4) + Preference Memory (objective 5) ---
+
+
+def _scale_meal(meal: dict, target_calories: float) -> dict:
+    factor = target_calories / meal["calories"] if meal["calories"] else 1
+    return {
+        "name": meal["name"],
+        "calories": round(meal["calories"] * factor),
+        "protein_g": round(meal["protein_g"] * factor),
+        "carbs_g": round(meal["carbs_g"] * factor),
+        "fat_g": round(meal["fat_g"] * factor),
+    }
+
+
+def get_meal_alternatives(db: Session, user: User, plan: NutritionPlan, day_index: int, meal_type: str) -> list[str]:
+    """Alternatives for the "Replace Meal" flow: other meals for the same
+    slot honoring diet type, allergens, and disliked foods, excluding meals
+    already scheduled that day."""
+    if day_index < 0 or day_index >= len(plan.days):
+        raise ValueError("day_index out of range")
+    day = plan.days[day_index]
+    if meal_type not in {m["meal_type"] for m in day.get("meals", [])}:
+        raise ValueError("meal_type not found on this day")
+
+    context = (plan.generation_basis or {}).get("context", {})
+    lifestyle = context.get("lifestyle_diet") or {}
+    medical = context.get("medical") or {}
+    preferences = context.get("preferences") or {}
+
+    from app.services.ai.nutrition_generator import _parse_allergens
+
+    preference_diet_type = preferences.get("diet_type")
+    diet_type = PREFERENCE_DIET_TYPE_MAP.get(preference_diet_type, lifestyle.get("diet_type", "omnivore"))
+    exclude_allergens = _parse_allergens(medical.get("allergies"), preferences.get("allergies"))
+    disliked = set(preferences.get("disliked_foods") or [])
+    already_in_day = {m["name"] for m in day["meals"]}
+
+    pool = meals_for(
+        pool_key_for_slot(meal_type), diet_type, exclude_allergens,
+        cuisine_preference=preferences.get("cuisine_preference"), budget=preferences.get("budget"),
+        cooking_time_preference=preferences.get("cooking_time_preference"),
+        exclude_names=disliked | already_in_day,
+    )
+    return [m["name"] for m in pool]
+
+
+def replace_meal_in_plan(
+    db: Session, user: User, plan: NutritionPlan, day_index: int, meal_type: str, replacement_name: str | None
+) -> NutritionPlan:
+    """
+    Sprint 4 objective 4: swaps a single meal in place, rescaled to the same
+    calorie target the original meal held, preserving the day's overall
+    structure. Also records the replacement in Nutrition Preferences
+    (objective 5) so a repeated choice gets favored automatically.
+    """
+    if day_index < 0 or day_index >= len(plan.days):
+        raise ValueError("day_index out of range")
+    day = plan.days[day_index]
+    meal_idx = next((i for i, m in enumerate(day["meals"]) if m["meal_type"] == meal_type), None)
+    if meal_idx is None:
+        raise ValueError("meal_type not found on this day")
+    original = day["meals"][meal_idx]
+
+    alternatives = get_meal_alternatives(db, user, plan, day_index, meal_type)
+    if not alternatives:
+        raise ValueError("No valid alternative meals are available for this slot")
+
+    if replacement_name is None:
+        import random
+        replacement_name = random.choice(alternatives)
+    elif replacement_name not in alternatives:
+        raise ValueError("That meal isn't a valid alternative for this slot")
+
+    replacement_meal = find_meal_by_name(replacement_name)
+    if replacement_meal is None:
+        raise ValueError("Unknown meal")
+
+    scaled = _scale_meal(replacement_meal, original["calories"])
+    scaled["meal_type"] = meal_type
+
+    new_days = [dict(d) for d in plan.days]
+    new_meals = list(new_days[day_index]["meals"])
+    new_meals[meal_idx] = scaled
+    new_days[day_index] = {**new_days[day_index], "meals": new_meals}
+    plan.days = new_days
+    db.commit()
+    db.refresh(plan)
+
+    nutrition_preferences_service.record_meal_replacement(db, user, original["name"], replacement_meal["name"])
+
+    return plan

@@ -1,8 +1,16 @@
+import { RefreshCw } from 'lucide-react'
 import Button from '../ui/Button.jsx'
 
-const MEAL_LABELS = { breakfast: 'Breakfast', lunch: 'Lunch', snack: 'Snack', dinner: 'Dinner' }
+const MEAL_LABELS = {
+  breakfast: 'Breakfast',
+  lunch: 'Lunch',
+  snack: 'Snack',
+  snack_2: 'Snack',
+  snack_3: 'Snack',
+  dinner: 'Dinner',
+}
 
-export default function MealCard({ meal, status, onSetStatus, saving }) {
+export default function MealCard({ meal, status, onSetStatus, saving, onReplace, replacing }) {
   return (
     <div className="py-md border-b border-divider last:border-none">
       <div className="flex items-center justify-between mb-xs">
@@ -19,7 +27,20 @@ export default function MealCard({ meal, status, onSetStatus, saving }) {
           </span>
         ) : null}
       </div>
-      <h4 className="text-label-lg font-display text-on-surface mb-xs">{meal.name}</h4>
+      <div className="flex items-start justify-between gap-sm mb-xs">
+        <h4 className="text-label-lg font-display text-on-surface">{meal.name}</h4>
+        {onReplace ? (
+          <button
+            type="button"
+            onClick={() => onReplace(null)}
+            disabled={replacing}
+            className="shrink-0 flex items-center gap-xs text-body-sm text-primary hover:underline disabled:opacity-50"
+          >
+            <RefreshCw className={`h-4 w-4 ${replacing ? 'animate-spin' : ''}`} />
+            Replace
+          </button>
+        ) : null}
+      </div>
       <div className="flex flex-wrap gap-md text-body-sm text-on-surface-variant mb-md">
         <span>{meal.calories} kcal</span>
         <span>{meal.protein_g}g protein</span>

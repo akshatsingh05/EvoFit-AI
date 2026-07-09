@@ -10,6 +10,8 @@ from app.schemas.nutrition import (
     NutritionWeekPlanResponse,
     MealCompletionRequest,
     MealCompletionResponse,
+    MealAlternativesResponse,
+    ReplaceMealRequest,
 )
 from app.schemas.history import HistoryListResponse
 from app.services import nutrition_service
@@ -103,3 +105,51 @@ def save_completion(
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
     return MealCompletionResponse.model_validate(record)
+
+
+# --- Sprint 4: Plan Customization ---
+
+
+@router.get("/week/meal-alternatives", response_model=MealAlternativesResponse)
+def get_meal_alternatives(
+    day_index: int,
+    meal_type: str,
+    offset: int = 0,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    week_start_date = nutrition_service.week_start_for_offset(offset)
+    plan = nutrition_service.get_plan_for_week(db, current_user, week_start_date)
+    if plan is None:
+        raise HTTPException(status_code=404, detail="No plan exists for that week")
+    try:
+        alternatives = nutrition_service.get_meal_alternatives(db, current_user, plan, day_index, meal_type)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    return MealAlternativesResponse(alternatives=alternatives)
+
+
+@router.post("/week/replace-meal", response_model=NutritionWeekResponse)
+def replace_meal(
+    payload: ReplaceMealRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    week_start_date = nutrition_service.week_start_for_offset(payload.offset)
+    plan = nutrition_service.get_plan_for_week(db, current_user, week_start_date)
+    if plan is None:
+        raise HTTPException(status_code=404, detail="No plan exists for that week")
+    try:
+        plan = nutrition_service.replace_meal_in_plan(
+            db, current_user, plan, payload.day_index, payload.meal_type, payload.replacement_name
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+    return NutritionWeekResponse(
+        week_start_date=week_start_date,
+        offset=payload.offset,
+        is_before_registration=False,
+        plan=NutritionWeekPlanResponse.model_validate(plan),
+        plan_info=nutrition_service.build_plan_info(db, current_user, plan),
+    )

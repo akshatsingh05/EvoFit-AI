@@ -61,18 +61,125 @@ MEALS = {
 
 MEAL_CALORIE_SHARE = {"breakfast": 0.25, "lunch": 0.30, "snack": 0.15, "dinner": 0.30}
 
+# Sprint 4: meal-count structures for the Nutrition Preferences "Meals Per
+# Day" setting. Every share list sums to 1.0. "snack_2"/"snack_3" pull from
+# the same underlying "snack" pool (see pool_key_for_slot below) but are
+# distinct meal_type strings so MealCompletion's per-day unique constraint
+# (user_id, meal_date, meal_type) doesn't collide between multiple snacks in
+# one day.
+MEAL_STRUCTURE_BY_COUNT = {
+    3: [("breakfast", 0.32), ("lunch", 0.35), ("dinner", 0.33)],
+    4: [("breakfast", 0.25), ("lunch", 0.30), ("snack", 0.15), ("dinner", 0.30)],
+    5: [("breakfast", 0.22), ("snack", 0.10), ("lunch", 0.28), ("snack_2", 0.10), ("dinner", 0.30)],
+    6: [("breakfast", 0.20), ("snack", 0.10), ("lunch", 0.25), ("snack_2", 0.10), ("dinner", 0.25), ("snack_3", 0.10)],
+}
+
+
+def pool_key_for_slot(meal_slot: str) -> str:
+    """snack_2 / snack_3 draw from the same library pool as "snack"."""
+    return "snack" if meal_slot.startswith("snack_") else meal_slot
+
+
+# Preference diet types (Nutrition Preferences: Vegetarian / Vegan /
+# Eggetarian / Non Vegetarian) don't map 1:1 onto the onboarding diet types
+# this library was tagged with (omnivore / vegetarian / vegan / pescatarian /
+# keto / other). "Eggetarian" reuses the "vegetarian" tag because every
+# vegetarian-tagged dish already permits eggs in this library (e.g. Veggie
+# Scramble, Breakfast Burrito), and "Non Vegetarian" maps to "omnivore".
+PREFERENCE_DIET_TYPE_MAP = {
+    "vegetarian": "vegetarian",
+    "vegan": "vegan",
+    "eggetarian": "vegetarian",
+    "non_vegetarian": "omnivore",
+}
+
+CUISINE_KEYWORDS = {
+    "indian": ["curry", "tikka", "dal", "chickpea", "lentil", "paneer", "tandoori", "masala"],
+    "asian": ["stir-fry", "tofu", "edamame", "poke", "teriyaki", "cauliflower fried rice", "tempeh"],
+    "mediterranean": ["feta", "quinoa", "salmon", "hummus", "olive", "chickpea and feta"],
+    "western": ["burger", "steak", "bacon", "toast", "pasta", "meatballs", "caesar", "burrito"],
+}
+
+# Rough relative cost signal from the primary protein/ingredient named —
+# there's no real price data in this library, so this is a soft, best-effort
+# sort preference for the "Budget" setting, never a hard filter.
+LOW_COST_KEYWORDS = ["lentil", "bean", "chickpea", "oats", "rice", "tofu", "egg", "cottage cheese"]
+HIGH_COST_KEYWORDS = ["salmon", "shrimp", "steak", "tuna", "cod"]
+
+QUICK_PREP_KEYWORDS = ["overnight", "smoothie", "shake", "rice cakes", "hard-boiled", "yogurt", "cottage cheese", "hummus", "nuts", "edamame"]
+
+
+def _infer_cuisine(meal: dict) -> str:
+    name = meal["name"].lower()
+    for cuisine, keywords in CUISINE_KEYWORDS.items():
+        if any(k in name for k in keywords):
+            return cuisine
+    return "mixed"
+
+
+def _infer_cost_tier(meal: dict) -> str:
+    name = meal["name"].lower()
+    if any(k in name for k in HIGH_COST_KEYWORDS):
+        return "high"
+    if any(k in name for k in LOW_COST_KEYWORDS):
+        return "low"
+    return "medium"
+
+
+def _infer_prep_time(meal: dict) -> str:
+    name = meal["name"].lower()
+    return "quick" if any(k in name for k in QUICK_PREP_KEYWORDS) else "moderate"
+
+
+for _meal_type, _meals in MEALS.items():
+    for _m in _meals:
+        _m["cuisine"] = _infer_cuisine(_m)
+        _m["cost_tier"] = _infer_cost_tier(_m)
+        _m["prep_time"] = _infer_prep_time(_m)
+
 
 def meals_for(
     meal_type: str,
     diet_type: str,
     exclude_allergens: set,
     prefer_low_glycemic: bool = False,
+    cuisine_preference: str | None = None,
+    budget: str | None = None,
+    cooking_time_preference: str | None = None,
+    exclude_names: set | None = None,
 ) -> list:
+    """
+    Hard filters: diet type + allergens (never emptied — see fallback in
+    nutrition_generator.py). Sprint 4 adds `exclude_names` (disliked foods /
+    replacement-memory demotion) as a hard filter, and three soft sort
+    preferences — cuisine, budget, cooking time — layered on top of the
+    existing low-glycemic sort, in that priority order, none of which can
+    empty the pool since they only reorder it.
+    """
+    exclude_names = exclude_names or set()
     pool = [
         m
         for m in MEALS.get(meal_type, [])
-        if diet_type in m["diet_types"] and not (set(m["allergens"]) & exclude_allergens)
+        if diet_type in m["diet_types"]
+        and m["name"] not in exclude_names
+        and not (set(m["allergens"]) & exclude_allergens)
     ]
+
     if prefer_low_glycemic:
         pool = sorted(pool, key=lambda m: 0 if m.get("low_glycemic") else 1)
+    if cuisine_preference and cuisine_preference != "mixed":
+        pool = sorted(pool, key=lambda m: 0 if m.get("cuisine") == cuisine_preference else 1)
+    if budget == "low":
+        pool = sorted(pool, key=lambda m: {"low": 0, "medium": 1, "high": 2}.get(m.get("cost_tier"), 1))
+    if cooking_time_preference == "quick":
+        pool = sorted(pool, key=lambda m: 0 if m.get("prep_time") == "quick" else 1)
+
     return pool
+
+
+def find_meal_by_name(name: str) -> dict | None:
+    for meals in MEALS.values():
+        for m in meals:
+            if m["name"] == name:
+                return m
+    return None

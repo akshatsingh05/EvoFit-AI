@@ -103,32 +103,91 @@ EXERCISES = [
 ]
 
 
+def _infer_equipment_tags(ex: dict) -> set:
+    """
+    Sprint 4: derives the *specific* piece(s) of equipment an exercise needs
+    (dumbbells / barbell / resistance_bands / machines / pull_up_bar / bench)
+    from its name, since the library only tracked a coarse tier before. Every
+    exercise with `equipment == "none"` needs nothing and is always tagged
+    "bodyweight_only" so a "Bodyweight Only" user preference never empties a
+    pool for a focus the library actually covers bodyweight-only.
+    """
+    if ex["equipment"] == "none":
+        return {"bodyweight_only"}
+
+    name = ex["name"].lower()
+    tags = set()
+    if "dumbbell" in name:
+        tags.add("dumbbells")
+    if "barbell" in name:
+        tags.add("barbell")
+    if "band" in name:
+        tags.add("resistance_bands")
+    if any(k in name for k in ("machine", "cable", "pulldown", "leg press", "leg curl", "leg extension")):
+        tags.add("machines")
+    if "pull-up" in name or "pull up" in name:
+        tags.add("pull_up_bar")
+    if "bench" in name and "step" not in name:
+        tags.add("bench")
+    if not tags:
+        # Fallback so every exercise still resolves to at least one concrete
+        # tag rather than silently matching nothing.
+        tags.add("dumbbells" if ex["equipment"] == "home_basic" else "machines")
+    return tags
+
+
+for _ex in EXERCISES:
+    _ex["equipment_tags"] = _infer_equipment_tags(_ex)
+
+
 def exercises_for(
     focus: str,
     equipment_access: str,
     exclude_injury_tags: set,
     exclude_conditions: set = None,
     prefer_low_impact: bool = False,
+    equipment_tags: set | None = None,
+    exclude_names: set | None = None,
 ) -> list:
     """
     Hard filters: equipment tier, injuries, medical contraindications — these
     never leave an empty pool for a valid focus/equipment combination given
     the library's coverage. `prefer_low_impact` is a soft sort preference
     (higher BMI or joint concerns), not a filter, so it can't empty the pool.
+
+    Sprint 4: `equipment_tags`, when provided (a non-empty set from the
+    user's Workout Preferences "Equipment Available" multi-select), is an
+    additional hard filter — an exercise is only included if it needs
+    nothing ("bodyweight_only") or its inferred equipment tag intersects the
+    user's selection. This is what makes "Home + Bodyweight Only" actually
+    exclude Bench Press / Cable Fly / Lat Pulldown rather than just using the
+    coarse tier. `exclude_names` drops specific exercises the user dislikes
+    or that generation_service.py has flagged via injury/avoid-movement text.
     """
     max_tier = EQUIPMENT_TIER.get(equipment_access, 0)
     exclude_conditions = exclude_conditions or set()
+    exclude_names = exclude_names or set()
 
     pool = [
         ex
         for ex in EXERCISES
         if ex["focus"] == focus
+        and ex["name"] not in exclude_names
         and EQUIPMENT_TIER.get(ex["equipment"], 0) <= max_tier
         and not (set(ex["injury_tags"]) & exclude_injury_tags)
         and not (set(ex.get("contraindications", [])) & exclude_conditions)
+        and (not equipment_tags or (ex["equipment_tags"] & (equipment_tags | {"bodyweight_only"})))
     ]
 
     if prefer_low_impact:
         pool = sorted(pool, key=lambda ex: 0 if ex.get("impact_level") == "low" else 1)
 
     return pool
+
+
+def find_exercise_by_name(name: str) -> dict | None:
+    return next((ex for ex in EXERCISES if ex["name"] == name), None)
+
+
+def all_focuses() -> list[str]:
+    return sorted({ex["focus"] for ex in EXERCISES})

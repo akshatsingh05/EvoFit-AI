@@ -1,5 +1,5 @@
 from datetime import date, datetime
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from app.schemas.plan_info import PlanInfoSchema
 from app.schemas.history import HistoryListResponse  # noqa: F401 (re-exported for router convenience)
@@ -71,3 +71,14 @@ class WorkoutCompletionResponse(BaseModel):
     status: str
 
     model_config = {"from_attributes": True}
+
+
+class ExerciseAlternativesResponse(BaseModel):
+    alternatives: list[str]
+
+
+class ReplaceExerciseRequest(BaseModel):
+    offset: int = 0
+    day_index: int = Field(ge=0, le=6)
+    exercise_index: int = Field(ge=0)
+    replacement_name: str | None = None  # None = auto "Swap"

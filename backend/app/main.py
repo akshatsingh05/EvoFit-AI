@@ -31,6 +31,8 @@ from app.models import (  # noqa: F401
     notification,
     daily_checkin,
     adaptive_insight,
+    workout_preferences,
+    nutrition_preferences,
 )
 
 from app.routers import (
@@ -47,6 +49,7 @@ from app.routers import (
     notifications,
     checkin,
     adaptive,
+    preferences as preferences_router,
 )
 
 configure_logging()
@@ -93,6 +96,7 @@ app.include_router(reports.router)
 app.include_router(notifications.router)
 app.include_router(checkin.router)
 app.include_router(adaptive.router)
+app.include_router(preferences_router.router)
 
 
 @app.on_event("startup")
