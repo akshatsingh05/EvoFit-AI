@@ -15,4 +15,7 @@ from app.models import (  # noqa: F401
     notification,
     daily_checkin,
     adaptive_insight,
+    workout_preferences,
+    nutrition_preferences,
+    plan_import,
 )

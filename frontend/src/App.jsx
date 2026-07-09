@@ -21,6 +21,8 @@ const Progress = lazy(() => import('./pages/Progress.jsx'))
 const DailyCheckIn = lazy(() => import('./pages/DailyCheckIn.jsx'))
 const WorkoutPreferences = lazy(() => import('./pages/WorkoutPreferences.jsx'))
 const NutritionPreferences = lazy(() => import('./pages/NutritionPreferences.jsx'))
+const ImportPlan = lazy(() => import('./pages/ImportPlan.jsx'))
+const PlanComparison = lazy(() => import('./pages/PlanComparison.jsx'))
 
 function RouteFallback() {
   return (
@@ -58,6 +60,8 @@ export default function App() {
           <Route path="/checkin" element={<DailyCheckIn />} />
           <Route path="/preferences/workout" element={<WorkoutPreferences />} />
           <Route path="/preferences/nutrition" element={<NutritionPreferences />} />
+          <Route path="/import-plan" element={<ImportPlan />} />
+          <Route path="/import-plan/:id" element={<PlanComparison />} />
         </Route>
 
         <Route path="*" element={<NotFound />} />
