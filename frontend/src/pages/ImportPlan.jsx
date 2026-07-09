@@ -1,10 +1,14 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { UploadCloud, FileText, History as HistoryIcon, Dumbbell, Salad } from 'lucide-react'
+import { motion } from 'framer-motion'
+import { UploadCloud, FileText, History as HistoryIcon, Dumbbell, Salad, Inbox } from 'lucide-react'
 import AppLayout from '../layouts/AppLayout.jsx'
 import Card from '../components/ui/Card.jsx'
 import Button from '../components/ui/Button.jsx'
 import Chip from '../components/ui/Chip.jsx'
+import EmptyState from '../components/ui/EmptyState.jsx'
+import { ListSkeleton } from '../components/ui/Skeleton.jsx'
+import { staggerContainer, staggerItem } from '../components/ui/PageTransition.jsx'
 import * as planImportService from '../services/planImportService'
 import { getErrorMessage } from '../utils/errorMessage.js'
 
@@ -171,9 +175,15 @@ function HistoryList({ planType }) {
     load()
   }, [load])
 
-  if (loading) return <p className="text-body-sm text-on-surface-variant">Loading history…</p>
+  if (loading) return <ListSkeleton rows={3} />
   if (entries.length === 0) {
-    return <p className="text-body-sm text-on-surface-variant">No {planType} plans imported yet.</p>
+    return (
+      <EmptyState
+        icon={Inbox}
+        title={`No ${planType} plans imported yet`}
+        message={`Import a ${planType} plan from a file, photo, or paste it manually to compare it against your EvoFit plan.`}
+      />
+    )
   }
 
   const statusLabel = {
@@ -181,29 +191,36 @@ function HistoryList({ planType }) {
   }
 
   return (
-    <div className="space-y-sm">
+    <motion.div className="space-y-sm" variants={staggerContainer} initial="initial" animate="animate">
       {entries.map((entry) => (
-        <Card
-          key={entry.id}
-          padded={false}
-          className="p-md flex items-center justify-between cursor-pointer hover:shadow-lg transition-shadow"
-          onClick={() => navigate(`/import-plan/${entry.id}`)}
-        >
-          <div className="flex items-center gap-md min-w-0">
-            <FileText size={18} className="text-on-surface-variant shrink-0" aria-hidden="true" />
-            <div className="min-w-0">
-              <p className="text-label-md text-on-surface truncate">{entry.plan_name}</p>
-              <p className="text-body-sm text-on-surface-variant">
-                {new Date(entry.created_at).toLocaleDateString()} · {entry.source_type}
-              </p>
+        <motion.div key={entry.id} variants={staggerItem}>
+          <Card
+            hoverable
+            padded={false}
+            className="p-md flex items-center justify-between cursor-pointer"
+            onClick={() => navigate(`/import-plan/${entry.id}`)}
+            role="button"
+            tabIndex={0}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' || e.key === ' ') navigate(`/import-plan/${entry.id}`)
+            }}
+          >
+            <div className="flex items-center gap-md min-w-0">
+              <FileText size={18} className="text-on-surface-variant shrink-0" aria-hidden="true" />
+              <div className="min-w-0">
+                <p className="text-label-md text-on-surface truncate">{entry.plan_name}</p>
+                <p className="text-body-sm text-on-surface-variant">
+                  {new Date(entry.created_at).toLocaleDateString()} · {entry.source_type}
+                </p>
+              </div>
             </div>
-          </div>
-          <Chip color={entry.applied_status === 'none' ? 'neutral' : 'primary'}>
-            {statusLabel[entry.applied_status] || entry.applied_status}
-          </Chip>
-        </Card>
+            <Chip color={entry.applied_status === 'none' ? 'neutral' : 'primary'}>
+              {statusLabel[entry.applied_status] || entry.applied_status}
+            </Chip>
+          </Card>
+        </motion.div>
       ))}
-    </div>
+    </motion.div>
   )
 }
 

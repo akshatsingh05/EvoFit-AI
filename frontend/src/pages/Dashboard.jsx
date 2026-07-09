@@ -1,5 +1,10 @@
 import { useState, useEffect } from 'react'
+import { motion } from 'framer-motion'
+import { AlertTriangle } from 'lucide-react'
 import AppLayout from '../layouts/AppLayout.jsx'
+import { DashboardSkeleton } from '../components/ui/Skeleton.jsx'
+import { staggerContainer, staggerItem } from '../components/ui/PageTransition.jsx'
+import Button from '../components/ui/Button.jsx'
 import WelcomeHeader from '../components/dashboard/WelcomeHeader.jsx'
 import CheckInStatusBanner from '../components/dashboard/CheckInStatusBanner.jsx'
 import TodayWorkoutCard from '../components/dashboard/TodayWorkoutCard.jsx'
@@ -39,9 +44,7 @@ export default function Dashboard() {
   if (loading) {
     return (
       <AppLayout title="Dashboard">
-        <div className="flex justify-center py-xxl">
-          <span className="h-8 w-8 rounded-full border-2 border-primary border-t-transparent animate-spin" />
-        </div>
+        <DashboardSkeleton />
       </AppLayout>
     )
   }
@@ -49,7 +52,18 @@ export default function Dashboard() {
   if (error || !data) {
     return (
       <AppLayout title="Dashboard">
-        <p className="text-body-md text-error">{error || 'Something went wrong.'}</p>
+        <div className="flex flex-col items-center text-center py-xxl px-lg">
+          <span className="flex h-14 w-14 items-center justify-center rounded-full bg-error/10 text-error mb-lg">
+            <AlertTriangle size={26} aria-hidden="true" />
+          </span>
+          <h3 className="text-headline-sm text-on-surface mb-sm">Couldn&rsquo;t load your dashboard</h3>
+          <p className="text-body-md text-on-surface-variant max-w-[360px] mb-lg">
+            {error || 'Something went wrong while loading your data.'}
+          </p>
+          <Button variant="primary" onClick={() => window.location.reload()}>
+            Try again
+          </Button>
+        </div>
       </AppLayout>
     )
   }
@@ -58,30 +72,45 @@ export default function Dashboard() {
     <AppLayout title="Dashboard">
       <WelcomeHeader fullName={data.full_name} />
 
-      <div className="space-y-lg">
-        <CheckInStatusBanner
-          hasCheckedInToday={data.has_checked_in_today}
-          unreadNotificationsCount={data.unread_notifications_count}
-        />
+      <motion.div
+        className="space-y-lg"
+        variants={staggerContainer}
+        initial="initial"
+        animate="animate"
+      >
+        <motion.div variants={staggerItem}>
+          <CheckInStatusBanner
+            hasCheckedInToday={data.has_checked_in_today}
+            unreadNotificationsCount={data.unread_notifications_count}
+          />
+        </motion.div>
 
-        <AICoachTipCard tip={data.ai_coach_tip} />
-        <AICoachRecommendations recommendations={data.ai_recommendations} />
+        <motion.div variants={staggerItem}>
+          <AICoachTipCard tip={data.ai_coach_tip} />
+        </motion.div>
+        <motion.div variants={staggerItem}>
+          <AICoachRecommendations recommendations={data.ai_recommendations} />
+        </motion.div>
 
-        <div className="grid sm:grid-cols-2 gap-lg">
+        <motion.div variants={staggerItem} className="grid sm:grid-cols-2 gap-lg">
           <TodayWorkoutCard workout={data.today_workout} />
           <TodayNutritionCard nutrition={data.today_nutrition} />
-        </div>
+        </motion.div>
 
-        <div className="grid sm:grid-cols-3 gap-lg">
+        <motion.div variants={staggerItem} className="grid sm:grid-cols-3 gap-lg">
           <RecoveryScoreCard score={data.recovery_score} />
           <WorkoutStreakCard days={data.workout_streak_days} />
           <FitnessScoreCard score={data.fitness_score} basis={data.fitness_score_basis} />
-        </div>
+        </motion.div>
 
-        <WeeklyProgressChart points={data.weekly_progress} />
+        <motion.div variants={staggerItem}>
+          <WeeklyProgressChart points={data.weekly_progress} />
+        </motion.div>
 
-        <QuickActions actions={data.quick_actions_available} />
-      </div>
+        <motion.div variants={staggerItem}>
+          <QuickActions actions={data.quick_actions_available} />
+        </motion.div>
+      </motion.div>
     </AppLayout>
   )
 }
